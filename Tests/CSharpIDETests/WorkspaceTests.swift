@@ -288,3 +288,39 @@ import CSharpIDECore
 @MainActor
 @Suite struct WorkspaceImplementationTests {
 }
+
+@MainActor
+@Suite struct WorkspaceDotnetTests {
+    @Test(.enabled(if: ToolLocator.find("dotnet") != nil), .timeLimit(.minutes(3)))
+    func buildErrorsBecomeProblemsAndRunPrintsOutput() async throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("csharpide-build-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let dir = base.canonicalFileURL
+        try """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+            </Project>
+            """.write(to: dir.appendingPathComponent("App.csproj"), atomically: true, encoding: .utf8)
+        let program = dir.appendingPathComponent("Program.cs")
+        try "System.Console.WriteLine(\"hi\");\nint x = \"no\";\n".write(to: program, atomically: true, encoding: .utf8)
+
+        let workspace = Workspace()
+        await workspace.openFolder(dir)
+        #expect(workspace.runConfigurations.map(\.project) == ["App.csproj"])
+
+        workspace.build()
+        while workspace.isRunning { try await Task.sleep(for: .milliseconds(200)) }
+        try await Task.sleep(for: .milliseconds(200))
+        let problems = workspace.buildDiagnostics[program.path] ?? []
+        #expect(problems.contains { $0.severity == .error && $0.message.hasPrefix("CS0029") && $0.start.line == 1 },
+                "output:\n\(workspace.output)")
+
+        try "System.Console.WriteLine(\"hi from run\");\n".write(to: program, atomically: true, encoding: .utf8)
+        workspace.runSelectedConfiguration()
+        while workspace.isRunning { try await Task.sleep(for: .milliseconds(200)) }
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(workspace.output.contains("hi from run"), "output:\n\(workspace.output)")
+        #expect(workspace.buildDiagnostics.isEmpty)
+    }
+}

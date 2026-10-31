@@ -29,14 +29,14 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Button { workspace.runGo(["build", "./..."]) } label: {
+                Button { workspace.build() } label: {
                     Label("Build", systemImage: "hammer")
                 }
-                .help("go build ./... (⌘B)")
+                .help("dotnet build (⌘B)")
                 Button { workspace.runTests(.all) } label: {
                     Label("Test", systemImage: "checkmark.diamond")
                 }
-                .help("go test ./... (⌘U)")
+                .help("dotnet test (⌘U)")
                 RunConfigurationPicker()
                 Button { workspace.runSelectedConfiguration() } label: {
                     Label("Run", systemImage: "play.fill")
@@ -544,8 +544,8 @@ private struct OutputLine: View {
     let text: String
 
     var body: some View {
-        if let reference = GoTestFinder.fileReferences(in: text).first {
-            Button { workspace.revealOutputReference(file: reference.file, line: reference.line) } label: {
+        if let reference = BuildOutput.references(in: text).first {
+            Button { workspace.revealOutputReference(file: reference.file, line: reference.line, column: reference.column) } label: {
                 Text(text).underline().foregroundStyle(Color.accentColor)
             }
             .buttonStyle(.plain)
@@ -592,7 +592,7 @@ struct OutputView: View {
                     if workspace.output.isEmpty {
                         Text("No output yet. Use Build (⌘B), Test (⌘U) or Run (⌘R).").foregroundStyle(.secondary)
                     }
-                    // Line by line, so `file.go:12:3` references from go build/vet/run are clickable.
+                    // Line by line, so `File.cs(12,3)` references from dotnet build/run/test are clickable.
                     ForEach(Array(workspace.output.split(separator: "\n", omittingEmptySubsequences: false).enumerated()),
                             id: \.offset) { _, line in
                         OutputLine(text: String(line))

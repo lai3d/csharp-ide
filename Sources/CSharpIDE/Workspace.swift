@@ -267,7 +267,13 @@ final class Workspace {
     var selectedRunConfigurationID: UUID? {
         didSet { saveRunConfigurations() }
     }
-    private(set) var mainPackages: [String] = []
+    /// MSBuild projects and solutions in the folder (refreshed on open and when project files change).
+    private(set) var projects: [DotnetProject] = []
+    private(set) var solutions: [String] = []
+    var runnableProjects: [DotnetProject] { projects.filter(\.isRunnable) }
+    /// Errors/warnings from the last `dotnet build` / `run` / `test`, by file (shown in Problems
+    /// for files the language server hasn't reported on).
+    private(set) var buildDiagnostics: [String: [Diagnostic]] = [:]
     var isEditingRunConfigurations = false
 
     var selectedRunConfiguration: RunConfiguration? {
@@ -291,7 +297,7 @@ final class Workspace {
     @ObservationIgnored private var watcher: DirectoryWatcher?
 
     var currentFile: URL? { activeDocument?.url }
-    var isGoFile: Bool { activeDocument?.isCSharp ?? false }
+    var isCSharpFile: Bool { activeDocument?.isCSharp ?? false }
     var canGoBack: Bool { !backStack.isEmpty }
     var dirtyDocuments: [Document] { documents.filter(\.isDirty) }
 
@@ -307,8 +313,10 @@ final class Workspace {
     }
 
     var allProblems: [ProblemItem] {
-        diagnostics.keys.sorted().flatMap { path in
-            diagnostics[path, default: []].map { ProblemItem(path: path, diagnostic: $0) }
+        // Language-server diagnostics win for files it reported on; build output fills in the rest.
+        let paths = Set(diagnostics.keys).union(buildDiagnostics.keys).sorted()
+        return paths.flatMap { path in
+            (diagnostics[path] ?? buildDiagnostics[path] ?? []).map { ProblemItem(path: path, diagnostic: $0) }
         }
     }
 
@@ -365,6 +373,7 @@ final class Workspace {
         documents = []
         activeDocument = nil
         diagnostics = [:]
+        buildDiagnostics = [:]
         output = ""
         backStack = []
         searchResults = []
@@ -381,26 +390,30 @@ final class Workspace {
 
     @ObservationIgnored private var loadingRunConfigurations = false
 
-    /// Saved configurations for this folder, or one per main package found.
+    /// Saved configurations for this folder, or one per runnable project found.
     func loadRunConfigurations() {
         guard let rootURL else { return }
-        mainPackages = GoPackages.mainPackages(under: rootURL)
+        refreshProjects()
         loadingRunConfigurations = true
         defer { loadingRunConfigurations = false }
         if let saved = SessionStore.runConfigurations(for: rootURL), !saved.configs.isEmpty {
             runConfigurations = saved.configs
             selectedRunConfigurationID = saved.selected ?? saved.configs.first?.id
         } else {
-            runConfigurations = mainPackages.map {
-                RunConfiguration(name: $0 == "." ? rootURL.lastPathComponent : ($0 as NSString).lastPathComponent, package: $0)
-            }
+            runConfigurations = runnableProjects.map { RunConfiguration(name: $0.name, project: $0.path) }
             selectedRunConfigurationID = runConfigurations.first?.id
         }
     }
 
-    func refreshMainPackages() {
+    func refreshProjects() {
         guard let rootURL else { return }
-        mainPackages = GoPackages.mainPackages(under: rootURL)
+        projects = DotnetProjects.find(under: rootURL)
+        solutions = DotnetProjects.solutions(under: rootURL)
+    }
+
+    /// What Build / Test operate on: the solution, else the only project, else the folder.
+    var buildTarget: [String] {
+        DotnetProjects.buildTarget(solutions: solutions, projects: projects).map { [$0] } ?? []
     }
 
     private func saveRunConfigurations() {
@@ -408,11 +421,17 @@ final class Workspace {
         SessionStore.saveRunConfigurations(runConfigurations, selected: selectedRunConfigurationID, for: rootURL)
     }
 
-    /// ⌘R: `go run <package> <args>` with the configuration's environment.
+    /// ⌘R: `dotnet run --project <project> -- <args>` with the configuration's environment.
     func runSelectedConfiguration() {
-        guard let config = selectedRunConfiguration else { return runGo(["run", "."]) }
-        runGo(["run", config.packagePattern] + config.argumentList, environment: config.environmentVariables)
+        guard let config = selectedRunConfiguration else { return runDotnet(["run"]) }
+        runDotnet(config.dotnetRunArguments, environment: config.environmentVariables)
     }
+
+    /// ⌘B
+    func build() { runDotnet(["build"] + buildTarget) }
+    func rebuild() { runDotnet(["build", "--no-incremental"] + buildTarget) }
+    func clean() { runDotnet(["clean"] + buildTarget) }
+    func restore() { runDotnet(["restore"] + buildTarget) }
 
     // MARK: - Session
 
@@ -465,6 +484,10 @@ final class Workspace {
         guard !relevant.isEmpty else { return }
         reloadTree()
         notifyWatchedFiles(relevant)
+        if relevant.contains(where: {
+            let ext = ($0 as NSString).pathExtension.lowercased()
+            return DotnetProjects.projectExtensions.contains(ext) || DotnetProjects.solutionExtensions.contains(ext)
+        }) { refreshProjects() }
         for document in documents { syncWithDisk(document) }
         refreshGit()
     }
@@ -565,9 +588,17 @@ final class Workspace {
         guard let rootURL else { return true }
         let root = Self.key(for: rootURL) + "/"
         guard path.hasPrefix(root) else { return true }
-        return path.dropFirst(root.count).split(separator: "/").contains {
-            $0.hasPrefix(".") || FileNode.ignoredNames.contains(String($0))
+        let components = path.dropFirst(root.count).split(separator: "/")
+        var current = rootURL
+        for (i, component) in components.enumerated() {
+            if component.hasPrefix(".") || FileNode.ignoredNames.contains(String(component)) { return true }
+            current = current.appendingPathComponent(String(component))
+            // bin/obj under a project (cheap name check first; the directory test reads its parent)
+            if i < components.count - 1, component == "bin" || component == "obj", FileNode.isBuildOutput(current) {
+                return true
+            }
         }
+        return false
     }
 
     private func syncWithDisk(_ document: Document) {
@@ -1798,14 +1829,19 @@ final class Workspace {
         }
     }
 
-    /// Opens `file.go:line` from test output (resolved by file name within the project).
-    func revealOutputReference(file: String, line: Int) {
+    /// Opens `File.cs(line,col)` / `File.cs:line N` from build, test or run output: an absolute
+    /// path as is, else resolved by file name within the project.
+    func revealOutputReference(file: String, line: Int, column: Int? = nil) {
         guard let rootURL else { return }
+        let position = TextPosition(line: max(line - 1, 0), character: max((column ?? 1) - 1, 0))
+        if file.hasPrefix("/"), FileManager.default.fileExists(atPath: file) {
+            return navigate(to: URL(fileURLWithPath: file), position: position)
+        }
         let suffix = "/" + (file as NSString).lastPathComponent
         let candidates = ProjectSearch.files(under: rootURL).filter { $0.hasSuffix(suffix) }
         let match = candidates.first { $0.hasSuffix("/" + file) } ?? candidates.first
         guard let path = match else { return }
-        navigate(to: URL(fileURLWithPath: path), position: TextPosition(line: max(line - 1, 0), character: 0))
+        navigate(to: URL(fileURLWithPath: path), position: position)
     }
 
     // MARK: - Debugging
@@ -1911,7 +1947,7 @@ final class Workspace {
 
     func debug(configuration config: RunConfiguration) {
         guard let rootURL else { return }
-        let dir = Self.key(for: rootURL.appendingPathComponent(config.package == "." ? "" : config.package))
+        let dir = Self.key(for: rootURL.appendingPathComponent((config.project as NSString).deletingLastPathComponent))
         launchDebugger(title: config.name, directory: URL(fileURLWithPath: dir), launch: [
             "request": "launch", "mode": "debug", "program": .string(dir),
             "cwd": .string(Self.key(for: rootURL)), "outputMode": "remote",
@@ -1967,12 +2003,12 @@ final class Workspace {
 
     var isDebugging: Bool { debugSession?.isActive ?? false }
 
-    // MARK: - go run / build / test
+    // MARK: - dotnet run / build
 
-    func runGo(_ arguments: [String], environment extra: [String: String] = [:]) {
+    func runDotnet(_ arguments: [String], environment extra: [String: String] = [:]) {
         guard let rootURL, !isRunning else { return }
-        guard let go = ToolLocator.find("go") else {
-            output = "go not found. Install Go from https://go.dev/dl/\n"
+        guard let dotnet = ToolLocator.find("dotnet") else {
+            output = "dotnet not found. Install the .NET SDK from https://dotnet.microsoft.com/download\n"
             bottomTab = .output
             return
         }
@@ -1980,13 +2016,16 @@ final class Workspace {
         let envNote = extra.isEmpty ? "" : extra.keys.sorted().map { "\($0)=… " }.joined()
         // Echo the command shell-style (quote words with spaces) so it reads as it ran.
         let shown = arguments.map { $0.contains(" ") || $0.isEmpty ? "\"\($0)\"" : $0 }.joined(separator: " ")
-        output = "$ \(envNote)go \(shown)\n"
+        output = "$ \(envNote)dotnet \(shown)\n"
         bottomTab = .output
         isRunning = true
+        let compiles = ["build", "run", "test", "publish", "pack"].contains(arguments.first ?? "")
+        if compiles { buildDiagnostics = [:] }
 
         let process = Process()
-        process.executableURL = go
-        process.arguments = arguments
+        process.executableURL = dotnet
+        // One line per diagnostic, no terminal logger animation in the Output panel.
+        process.arguments = arguments + (compiles && arguments.first != "run" ? ["-tl:off", "-nologo"] : [])
         process.currentDirectoryURL = rootURL
         process.environment = ToolLocator.environment().merging(extra) { $1 }
         let pipe = Pipe()
@@ -2009,6 +2048,7 @@ final class Workspace {
                 self.isRunning = false
                 self.runProcess = nil
                 self.appendOutput("\n[process exited with status \(status)]\n")
+                if compiles { self.collectBuildDiagnostics() }
             }
         }
         do {
@@ -2016,8 +2056,25 @@ final class Workspace {
             runProcess = process
         } catch {
             isRunning = false
-            appendOutput("Failed to start go: \(error.localizedDescription)\n")
+            appendOutput("Failed to start dotnet: \(error.localizedDescription)\n")
         }
+    }
+
+    /// Turns MSBuild `File.cs(l,c): error CS…` lines in the output into Problems; shows the
+    /// Problems tab when the build failed with errors.
+    private func collectBuildDiagnostics() {
+        guard let rootURL else { return }
+        var collected: [String: [Diagnostic]] = [:]
+        for problem in BuildOutput.problems(in: output) {
+            let url = problem.file.hasPrefix("/") ? URL(fileURLWithPath: problem.file)
+                : rootURL.appendingPathComponent(problem.file)
+            let position = TextPosition(line: max(problem.line - 1, 0), character: max(problem.column - 1, 0))
+            collected[Self.key(for: url), default: []].append(Diagnostic(
+                start: position, end: position, severity: problem.severity,
+                message: "\(problem.code): \(problem.message)", source: "msbuild"))
+        }
+        buildDiagnostics = collected
+        if collected.values.contains(where: { $0.contains { $0.severity == .error } }) { bottomTab = .problems }
     }
 
     func stopRun() {

@@ -12,6 +12,20 @@ public struct FileNode: Identifiable, Hashable, Sendable {
 
     public static let ignoredNames: Set<String> = [".git", ".build", ".idea", ".vscode", "node_modules", "vendor"]
 
+    /// `bin` / `obj` next to a project file: build output, hidden like `.build`.
+    public static func isBuildOutput(_ directory: URL) -> Bool {
+        let name = directory.lastPathComponent
+        guard name == "bin" || name == "obj" else { return false }
+        let parent = directory.deletingLastPathComponent()
+        let siblings = (try? FileManager.default.contentsOfDirectory(atPath: parent.path)) ?? []
+        return siblings.contains { DotnetProjects.projectExtensions.contains(($0 as NSString).pathExtension.lowercased()) }
+    }
+
+    /// Whether the tree, search and file watching skip this item.
+    public static func isIgnored(_ url: URL, isDirectory: Bool) -> Bool {
+        ignoredNames.contains(url.lastPathComponent) || (isDirectory && isBuildOutput(url))
+    }
+
     public init(url: URL, isDirectory: Bool, children: [FileNode]?) {
         self.url = url
         self.isDirectory = isDirectory
@@ -28,9 +42,9 @@ public struct FileNode: Identifiable, Hashable, Sendable {
         else { return [] }
 
         return items
-            .filter { !ignoredNames.contains($0.lastPathComponent) }
-            .map { url in
+            .compactMap { url -> FileNode? in
                 let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+                if isIgnored(url, isDirectory: isDir) { return nil }
                 let children = isDir ? (depth < maxDepth ? loadChildren(of: url, depth: depth + 1, maxDepth: maxDepth) : []) : nil
                 return FileNode(url: url, isDirectory: isDir, children: children)
             }

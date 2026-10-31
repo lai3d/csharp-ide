@@ -154,47 +154,47 @@ struct CSharpIDECommands: Commands {
                     Task { await workspace.jumpToDefinition(from: document, at: document.caretOffset) }
                 }
                 .keyboardShortcut("j", modifiers: [.control, .command])
-                .disabled(!workspace.isGoFile)
+                .disabled(!workspace.isCSharpFile)
                 Button("Jump to Implementation") {
                     guard let document = workspace.activeDocument else { return }
                     Task { await workspace.jumpToImplementation(from: document, at: document.caretOffset) }
                 }
                 .keyboardShortcut("j", modifiers: [.option, .command])
-                .disabled(!workspace.isGoFile)
+                .disabled(!workspace.isCSharpFile)
                 Button("Jump to Type Definition") {
                     guard let document = workspace.activeDocument else { return }
                     Task { await workspace.jumpToTypeDefinition(from: document, at: document.caretOffset) }
                 }
                 .keyboardShortcut("j", modifiers: [.control, .option, .command])
-                .disabled(!workspace.isGoFile)
+                .disabled(!workspace.isCSharpFile)
                 Button("Find References") {
                     guard let document = workspace.activeDocument else { return }
                     Task { await workspace.findReferences(in: document, at: document.caretOffset) }
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
-                .disabled(!workspace.isGoFile)
+                .disabled(!workspace.isCSharpFile)
                 Button("Call Hierarchy") {
                     guard let document = workspace.activeDocument else { return }
                     Task { await workspace.showCallHierarchy(in: document, at: document.caretOffset) }
                 }
                 .keyboardShortcut("h", modifiers: [.control, .option])
-                .disabled(!workspace.isGoFile)
+                .disabled(!workspace.isCSharpFile)
                 Button("Go Back") { workspace.goBack() }
                     .keyboardShortcut(.leftArrow, modifiers: [.control, .command])
                     .disabled(!workspace.canGoBack)
                 Divider()
                 Button("Fold") { workspace.requestFold(.fold) }
                     .keyboardShortcut(.leftArrow, modifiers: [.option, .command])
-                    .disabled(!workspace.isGoFile)
+                    .disabled(!workspace.isCSharpFile)
                 Button("Unfold") { workspace.requestFold(.unfold) }
                     .keyboardShortcut(.rightArrow, modifiers: [.option, .command])
-                    .disabled(!workspace.isGoFile)
+                    .disabled(!workspace.isCSharpFile)
                 Button("Fold All") { workspace.requestFold(.foldAll) }
                     .keyboardShortcut(.leftArrow, modifiers: [.shift, .option, .command])
-                    .disabled(!workspace.isGoFile)
+                    .disabled(!workspace.isCSharpFile)
                 Button("Unfold All") { workspace.requestFold(.unfoldAll) }
                     .keyboardShortcut(.rightArrow, modifiers: [.shift, .option, .command])
-                    .disabled(!workspace.isGoFile)
+                    .disabled(!workspace.isCSharpFile)
                 Divider()
                 Button("Next Tab") { workspace.selectAdjacentTab(1) }
                     .keyboardShortcut("]", modifiers: [.command, .shift])
@@ -207,10 +207,10 @@ struct CSharpIDECommands: Commands {
                     Task { await workspace.promptRename(in: document, at: document.caretOffset) }
                 }
                 .keyboardShortcut("e", modifiers: [.control, .command])
-                .disabled(!workspace.isGoFile)
+                .disabled(!workspace.isCSharpFile)
                 Button("Quick Fix…") { workspace.requestQuickFix() }
                     .keyboardShortcut(.return, modifiers: .option)
-                    .disabled(!workspace.isGoFile)
+                    .disabled(!workspace.isCSharpFile)
             }
             CommandMenu("Debug") {
                 Button("Start Debugging") { workspace.startDebugging() }
@@ -236,7 +236,7 @@ struct CSharpIDECommands: Commands {
                 Divider()
                 Button("Toggle Breakpoint") { workspace.toggleBreakpointAtCaret() }
                     .keyboardShortcut("\\", modifiers: .command)
-                    .disabled(!workspace.isGoFile)
+                    .disabled(!workspace.isCSharpFile)
                 Button("Remove All Breakpoints") { workspace.clearBreakpoints() }
                     .disabled(workspace.breakpoints.isEmpty)
             }
@@ -251,13 +251,18 @@ struct CSharpIDECommands: Commands {
                 .keyboardShortcut("d", modifiers: [.option, .command])
                 .disabled(workspace.activeDocument.map { workspace.gitBase(for: $0) == nil } ?? true)
             }
-            CommandMenu("Go") {
+            CommandMenu(".NET") {
                 Button("Run") { workspace.runSelectedConfiguration() }
                     .keyboardShortcut("r")
                 Button("Edit Run Configurations…") { workspace.isEditingRunConfigurations = true }
                     .disabled(workspace.rootURL == nil)
-                Button("Build") { workspace.runGo(["build", "./..."]) }
+                Button("Build") { workspace.build() }
                     .keyboardShortcut("b")
+                Button("Rebuild") { workspace.rebuild() }
+                    .keyboardShortcut("b", modifiers: [.shift, .command])
+                Button("Clean") { workspace.clean() }
+                Button("Restore Packages") { workspace.restore() }
+                Divider()
                 Button("Test All") { workspace.runTests(.all) }
                     .keyboardShortcut("u")
                 Button("Test Package") { workspace.runActivePackageTests() }
@@ -272,23 +277,12 @@ struct CSharpIDECommands: Commands {
                 Button("Terminal") { workspace.showTerminal() }
                     .keyboardShortcut("`", modifiers: .control)
                 Divider()
-                Button("Vet (go vet ./...)") { workspace.runGo(["vet", "./..."]) }
-                    .keyboardShortcut("v", modifiers: [.control, .option, .command])
-                Button("Generate (go generate ./...)") { workspace.runGo(["generate", "./..."]) }
-                Menu("Modules") {
-                    Button("Tidy (go mod tidy)") { workspace.runGo(["mod", "tidy"]) }
-                    Button("Update Dependencies (go get -u ./...)") { workspace.runGo(["get", "-u", "./..."]) }
-                    Button("Download (go mod download)") { workspace.runGo(["mod", "download"]) }
-                    Button("Verify (go mod verify)") { workspace.runGo(["mod", "verify"]) }
-                }
-                .disabled(workspace.rootURL == nil)
-                Divider()
                 Button("Stop") { workspace.stopRun() }
                     .keyboardShortcut(".")
                 Divider()
                 Button("Format Document") { Task { await workspace.formatActiveDocument() } }
                     .keyboardShortcut("f", modifiers: [.option, .shift])
-                    .disabled(!workspace.isGoFile)
+                    .disabled(!workspace.isCSharpFile)
                 Toggle("Format on Save", isOn: $formatOnSave)
                 Divider()
                 Button("Restart csharp-ls") { Task { await workspace.restartLanguageServer() } }

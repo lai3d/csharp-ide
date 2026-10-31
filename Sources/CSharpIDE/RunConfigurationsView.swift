@@ -21,7 +21,7 @@ struct RunConfigurationPicker: View {
             Divider()
             Button("Edit Configurations…") { workspace.isEditingRunConfigurations = true }
         } label: {
-            Label(workspace.selectedRunConfiguration?.name ?? "No main package", systemImage: "terminal")
+            Label(workspace.selectedRunConfiguration?.name ?? "No runnable project", systemImage: "terminal")
                 .labelStyle(.titleAndIcon)
         }
         .help("Run configuration (⌘R runs it, ⌥⌘R debugs it)")
@@ -58,13 +58,22 @@ struct RunConfigurationsSheet: View {
                     if let index = workspace.runConfigurations.firstIndex(where: { $0.id == selection }) {
                         Form {
                             TextField("Name", text: $workspace.runConfigurations[index].name)
-                            Picker("Package", selection: $workspace.runConfigurations[index].package) {
-                                ForEach(packageChoices(including: workspace.runConfigurations[index].package), id: \.self) {
-                                    Text($0 == "." ? ". (project root)" : "./" + $0).tag($0)
+                            Picker("Project", selection: $workspace.runConfigurations[index].project) {
+                                ForEach(projectChoices(including: workspace.runConfigurations[index].project), id: \.self) {
+                                    Text($0).tag($0)
                                 }
                             }
+                            Picker("Configuration", selection: $workspace.runConfigurations[index].configuration) {
+                                Text("Debug").tag("Debug")
+                                Text("Release").tag("Release")
+                            }
+                            .pickerStyle(.segmented)
+                            Picker("Launch Profile", selection: $workspace.runConfigurations[index].launchProfile) {
+                                Text("Default").tag("")
+                                ForEach(profileChoices(for: workspace.runConfigurations[index]), id: \.self) { Text($0).tag($0) }
+                            }
                             TextField("Arguments", text: $workspace.runConfigurations[index].arguments,
-                                      prompt: Text("-port 8080 --name \"my app\""))
+                                      prompt: Text("--port 8080 --name \"my app\""))
                                 .font(.system(.body, design: .monospaced))
                             LabeledContent("Environment") {
                                 TextEditor(text: $workspace.runConfigurations[index].environment)
@@ -95,20 +104,27 @@ struct RunConfigurationsSheet: View {
             }
             .padding(10)
         }
-        .frame(width: 720, height: 330)
+        .frame(width: 720, height: 400)
         .onAppear {
-            workspace.refreshMainPackages()
+            workspace.refreshProjects()
             selection = workspace.selectedRunConfiguration?.id
         }
     }
 
-    private func packageChoices(including current: String) -> [String] {
-        workspace.mainPackages.contains(current) ? workspace.mainPackages : [current] + workspace.mainPackages
+    private func projectChoices(including current: String) -> [String] {
+        let paths = workspace.runnableProjects.map(\.path)
+        return paths.contains(current) || current.isEmpty ? paths : [current] + paths
+    }
+
+    private func profileChoices(for config: RunConfiguration) -> [String] {
+        guard let rootURL = workspace.rootURL, !config.project.isEmpty else { return [] }
+        let profiles = LaunchSettings.profiles(forProject: rootURL.appendingPathComponent(config.project))
+        return profiles.contains(config.launchProfile) || config.launchProfile.isEmpty ? profiles : [config.launchProfile] + profiles
     }
 
     private func add() {
-        let package = workspace.mainPackages.first ?? "."
-        let config = RunConfiguration(name: "New Configuration", package: package)
+        let project = workspace.runnableProjects.first
+        let config = RunConfiguration(name: project?.name ?? "New Configuration", project: project?.path ?? "")
         workspace.runConfigurations.append(config)
         selection = config.id
     }

@@ -117,7 +117,7 @@ public enum ProjectSearch {
         for case let url as URL in enumerator {
             let values = try? url.resourceValues(forKeys: Set(keys))
             if values?.isDirectory == true {
-                if FileNode.ignoredNames.contains(url.lastPathComponent) { enumerator.skipDescendants() }
+                if FileNode.isIgnored(url, isDirectory: true) { enumerator.skipDescendants() }
                 continue
             }
             guard values?.isRegularFile == true, (values?.fileSize ?? 0) <= maxFileSize else { continue }
