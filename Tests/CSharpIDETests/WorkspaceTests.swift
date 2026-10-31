@@ -324,3 +324,64 @@ import CSharpIDECore
         #expect(workspace.buildDiagnostics.isEmpty)
     }
 }
+
+@MainActor
+@Suite struct WorkspaceDotnetTestRunTests {
+    /// Needs the xunit packages (restored from nuget.org the first time).
+    @Test(.enabled(if: ToolLocator.find("dotnet") != nil), .timeLimit(.minutes(5)))
+    func runsAllTestsThenOneAtTheCaret() async throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("csharpide-xunit-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let dir = base.canonicalFileURL
+        try """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup><TargetFramework>net10.0</TargetFramework><IsPackable>false</IsPackable></PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+                <PackageReference Include="xunit" Version="2.9.3" />
+                <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+              </ItemGroup>
+            </Project>
+            """.write(to: dir.appendingPathComponent("Calc.Tests.csproj"), atomically: true, encoding: .utf8)
+        let file = dir.appendingPathComponent("CalcTests.cs")
+        try """
+            using Xunit;
+
+            namespace Calc.Tests;
+
+            public class CalcTests
+            {
+                [Fact]
+                public void Adds() => Assert.Equal(4, 2 + 2);
+
+                [Fact]
+                public void Fails()
+                {
+                    Assert.Equal(5, 2 + 2);
+                }
+            }
+            """.write(to: file, atomically: true, encoding: .utf8)
+
+        let workspace = Workspace()
+        await workspace.openFolder(dir)
+        #expect(workspace.projects.first?.isTest == true)
+        #expect(workspace.runConfigurations.isEmpty)
+
+        workspace.runTests(.all)
+        while workspace.isRunning { try await Task.sleep(for: .milliseconds(200)) }
+        let report = workspace.testReport
+        #expect((report.passed, report.failed) == (1, 1), "output:\n\(workspace.output)")
+        let failed = try #require(report.tests.first { $0.status == .failed })
+        #expect(failed.method == "Fails" && failed.output.contains("CalcTests.cs:line 13"))
+        #expect(workspace.selectedTestID == failed.id)
+
+        let document = try #require(workspace.openFile(file))
+        #expect(workspace.isTestDocument(document))
+        document.caretOffset = LineIndex(document.text).offset(of: TextPosition(line: 7, character: 10))
+        workspace.runTestAtCaret()
+        while workspace.isRunning { try await Task.sleep(for: .milliseconds(200)) }
+        #expect(workspace.testReport.tests.map(\.method) == ["Adds"], "output:\n\(workspace.output)")
+        #expect(workspace.testStatuses["Adds"] == .passed)
+    }
+}

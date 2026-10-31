@@ -49,8 +49,10 @@ final class CallNode: Identifiable {
 
 enum TestScope: Equatable {
     case all
-    case package(URL)
-    case test(String, in: URL)
+    /// A project file, relative to the root.
+    case project(String)
+    /// A fully qualified test method (`Ns.Class.Method`), optionally within one project.
+    case test(String, project: String?)
 }
 
 enum SidebarMode: Hashable {
@@ -219,13 +221,11 @@ final class Workspace {
     private(set) var outline: [SymbolNode] = []
 
     // Tests
-    private(set) var testReport = GoTestReport()
+    private(set) var testReport = TestReport()
     private(set) var testRunTitle = ""
     var selectedTestID: String?
-    /// Latest status per test name, for gutter markers.
-    var testStatuses: [String: GoTestResult.Status] {
-        Dictionary(testReport.tests.compactMap { t in t.name.map { ($0, t.status) } }, uniquingKeysWith: { $1 })
-    }
+    /// Latest status per test method, for gutter markers.
+    var testStatuses: [String: TestResult.Status] { testReport.statusByMethod }
 
     // Debugging
     /// Breakpoints: canonical file path → one-based lines.
@@ -1704,34 +1704,37 @@ final class Workspace {
 
     func runTests(_ scope: TestScope, coverage measure: Bool = false) {
         guard let rootURL, !isRunning else { return }
-        guard let go = ToolLocator.find("go") else {
-            output = "go not found. Install Go from https://go.dev/dl/\n"
+        guard let dotnet = ToolLocator.find("dotnet") else {
+            output = "dotnet not found. Install the .NET SDK from https://dotnet.microsoft.com/download\n"
             bottomTab = .output
             return
         }
         saveAll()
-        var arguments = ["test", "-json"]
-        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("goide-cover-\(UUID().uuidString).out")
-        if measure { arguments.append("-coverprofile=" + profile.path) }
+        let results = FileManager.default.temporaryDirectory.appendingPathComponent("csharpide-tests-\(UUID().uuidString)")
+        var arguments = ["test"]
         switch scope {
         case .all:
-            arguments.append("./...")
+            arguments += buildTarget
             testRunTitle = "All tests"
-        case .package(let dir):
-            arguments.append(packagePattern(for: dir))
-            testRunTitle = "Package \(packagePattern(for: dir))"
-        case .test(let name, let dir):
-            arguments += ["-run", "^\(NSRegularExpression.escapedPattern(for: name))$", packagePattern(for: dir)]
-            testRunTitle = name
+        case .project(let project):
+            arguments.append(project)
+            testRunTitle = (project as NSString).lastPathComponent
+        case .test(let name, let project):
+            arguments += (project.map { [$0] } ?? buildTarget) + ["--filter", "FullyQualifiedName=\(name)"]
+            testRunTitle = String(name.split(separator: ".").last ?? Substring(name))
         }
-        testReport = GoTestReport()
+        arguments += ["--logger", "trx", "--logger", "console;verbosity=normal",
+                      "--results-directory", results.path, "-tl:off", "-nologo"]
+        if measure { arguments += ["--collect", "XPlat Code Coverage"] }
+        testReport = TestReport()
+        buildDiagnostics = [:]
         selectedTestID = nil
-        output = "$ go \(arguments.joined(separator: " "))\n"
+        output = "$ dotnet \(arguments.map { $0.contains(" ") ? "\"\($0)\"" : $0 }.joined(separator: " "))\n"
         bottomTab = .tests
         isRunning = true
 
         let process = Process()
-        process.executableURL = go
+        process.executableURL = dotnet
         process.arguments = arguments
         process.currentDirectoryURL = rootURL
         process.environment = ToolLocator.environment()
@@ -1752,10 +1755,13 @@ final class Workspace {
                 try? await Task.sleep(for: .milliseconds(80))  // let the last lines land
                 self.isRunning = false
                 self.runProcess = nil
-                if measure { self.loadCoverage(profile) }
+                self.loadTestResults(from: results, coverage: measure)
+                self.collectBuildDiagnostics()
                 let r = self.testReport
                 self.appendOutput("\n[\(r.passed) passed, \(r.failed) failed, \(r.skipped) skipped — exit \(status)]\n")
-                if r.tests.isEmpty, !r.buildOutput.isEmpty { self.bottomTab = .output }  // build failed
+                if r.tests.isEmpty, status != 0 {  // build failed or nothing ran
+                    self.bottomTab = self.buildDiagnostics.isEmpty ? .output : .problems
+                }
                 self.selectedTestID = self.selectedTestID ?? r.tests.first { $0.status == .failed }?.id
             }
         }
@@ -1764,19 +1770,23 @@ final class Workspace {
             runProcess = process
         } catch {
             isRunning = false
-            appendOutput("Failed to start go: \(error.localizedDescription)\n")
+            appendOutput("Failed to start dotnet: \(error.localizedDescription)\n")
         }
     }
 
-    private func loadCoverage(_ profile: URL) {
-        defer { try? FileManager.default.removeItem(at: profile) }
-        guard let rootURL, let text = try? String(contentsOf: profile, encoding: .utf8),
-              let goMod = try? String(contentsOf: rootURL.appendingPathComponent("go.mod"), encoding: .utf8),
-              let module = CoverageReport.modulePath(goMod: goMod)
-        else { return }
-        coverage = CoverageReport.parse(text, modulePath: module, root: Self.key(for: rootURL))
-        showCoverage = true
+    /// Reads the TRX files (exact outcomes, messages, stack traces) and coverage of a finished run.
+    private func loadTestResults(from directory: URL, coverage measure: Bool) {
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let files = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL } ?? []
+        for trx in files where trx.pathExtension == "trx" {
+            if let data = try? Data(contentsOf: trx) { testReport.merge(trx: data) }
+        }
+        if measure { loadCoverage(files.filter { $0.lastPathComponent == "coverage.cobertura.xml" }) }
     }
+
+    /// Coverage (cobertura) lands with roadmap item 2.5.
+    private func loadCoverage(_ files: [URL]) {}
 
     func clearCoverage() {
         coverage = nil
@@ -1784,46 +1794,67 @@ final class Workspace {
 
     private func consumeTestLine(_ line: String) {
         testReport.consume(line: line)
-        if !line.hasPrefix("{") { appendOutput(line + "\n") }
-        else if let data = line.data(using: .utf8),
-                let event = try? JSONDecoder().decode(GoTestEvent.self, from: data),
-                let text = event.output, event.action == "output" || event.action == "build-output" {
-            appendOutput(text)
-        }
+        appendOutput(line + "\n")
     }
 
-    /// Runs the test function around the caret, else the active file's package.
+    /// The project file (relative to the root) whose folder contains `url`: the deepest one.
+    func project(containing url: URL) -> DotnetProject? {
+        guard let rootURL else { return nil }
+        let root = Self.key(for: rootURL)
+        let path = Self.key(for: url)
+        return projects
+            .filter { project in
+                let dir = project.directory == "." ? root : root + "/" + project.directory
+                return path.hasPrefix(dir + "/")
+            }
+            .max { $0.directory.count < $1.directory.count }
+    }
+
+    /// Whether the document belongs to a test project (gutter ▶ markers, run-at-caret).
+    func isTestDocument(_ document: Document) -> Bool {
+        document.isCSharp && project(containing: document.url)?.isTest == true
+    }
+
+    /// Runs the test method around the caret, else the active file's test project, else all.
     func runTestAtCaret() {
-        guard let document = activeDocument else { return runTests(.all) }
-        let dir = document.url.deletingLastPathComponent()
-        if document.name.hasSuffix("_test.go"),
-           let name = GoTestFinder.enclosingTest(in: document.text, at: document.caretOffset) {
-            runTests(.test(name, in: dir))
-        } else {
-            runTests(.package(dir))
+        guard let document = activeDocument, isTestDocument(document) else { return runActivePackageTests() }
+        let project = project(containing: document.url)?.path
+        if let method = CSharpTestFinder.enclosingTest(in: document.text, at: document.caretOffset) {
+            runTests(.test(method.fullyQualifiedName, project: project))
+        } else if let project {
+            runTests(.project(project))
         }
     }
 
+    /// Runs the tests of the active file's project (if it's a test project), else all tests.
     func runActivePackageTests() {
-        guard let document = activeDocument else { return runTests(.all) }
-        runTests(.package(document.url.deletingLastPathComponent()))
+        guard let document = activeDocument, let project = project(containing: document.url), project.isTest
+        else { return runTests(.all) }
+        runTests(.project(project.path))
     }
 
-    private func packagePattern(for dir: URL) -> String {
-        let relative = displayPath(Self.key(for: dir))
-        return relative == Self.key(for: dir) || relative.isEmpty ? "." : "./" + relative
+    /// Runs the test method `name` declared in `document` (gutter ▶).
+    func runTest(named name: String, in document: Document) {
+        let project = project(containing: document.url)?.path
+        if let method = CSharpTestFinder.testMethods(in: document.text).first(where: { $0.name == name }) {
+            runTests(.test(method.fullyQualifiedName, project: project))
+        }
     }
 
-    /// Opens a test function's declaration (searches the project's _test.go files).
-    func revealTest(named name: String) {
+    /// Opens a test method's declaration (searches the test projects' .cs files).
+    func revealTest(_ test: TestResult) {
         guard let rootURL else { return }
-        let base = String(name.split(separator: "/").first ?? Substring(name))
-        for path in ProjectSearch.files(under: rootURL) where path.hasSuffix("_test.go") {
+        let roots = projects.filter(\.isTest).map { $0.directory == "." ? Self.key(for: rootURL) : Self.key(for: rootURL) + "/" + $0.directory }
+        for path in ProjectSearch.files(under: rootURL) where path.hasSuffix(".cs") {
+            guard roots.isEmpty || roots.contains(where: { path.hasPrefix($0 + "/") }) else { continue }
             let key = Self.key(for: URL(fileURLWithPath: path))
             let text = documents.first { Self.key(for: $0.url) == key }?.text
                 ?? (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
-            if let found = GoTestFinder.testFunctions(in: text).first(where: { $0.name == base }) {
-                navigate(to: URL(fileURLWithPath: path), position: TextPosition(line: found.line, character: 5))
+            guard text.contains(test.method) else { continue }
+            if let found = CSharpTestFinder.testMethods(in: text).first(where: {
+                $0.name == test.method && (test.className.isEmpty || $0.className == test.className)
+            }) {
+                navigate(to: URL(fileURLWithPath: path), position: TextPosition(line: found.line, character: 0))
                 return
             }
         }
@@ -1923,15 +1954,15 @@ final class Workspace {
         }
     }
 
-    /// Debugs the test at the caret (in a _test.go file), else the active file's package (or the root).
+    /// Debugs the test at the caret (in a test project), else the selected run configuration.
     func startDebugging() {
         guard let rootURL else { return }
-        if let document = activeDocument, document.name.hasSuffix("_test.go"),
-           let name = GoTestFinder.enclosingTest(in: document.text, at: document.caretOffset) {
-            debug(test: name, in: document.url.deletingLastPathComponent())
+        if let document = activeDocument, isTestDocument(document),
+           let method = CSharpTestFinder.enclosingTest(in: document.text, at: document.caretOffset) {
+            debug(test: method.fullyQualifiedName, in: document.url.deletingLastPathComponent())
         } else if let config = selectedRunConfiguration {
             debug(configuration: config)
-        } else if let document = activeDocument, document.isCSharp, !document.name.hasSuffix("_test.go") {
+        } else if let document = activeDocument, document.isCSharp {
             debug(package: document.url.deletingLastPathComponent())
         } else {
             debug(package: rootURL)
@@ -1939,7 +1970,7 @@ final class Workspace {
     }
 
     func debug(package dir: URL) {
-        launchDebugger(title: packagePattern(for: dir), directory: dir, launch: [
+        launchDebugger(title: displayPath(Self.key(for: dir)), directory: dir, launch: [
             "request": "launch", "mode": "debug", "program": .string(Self.key(for: dir)),
             "cwd": .string(Self.key(for: dir)), "outputMode": "remote",
         ])
