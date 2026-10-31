@@ -25,20 +25,20 @@ import Testing
         let dir = base.canonicalFileURL
         try """
             <Project Sdk="Microsoft.NET.Sdk">
-              <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+              <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
             </Project>
             """.write(to: dir.appendingPathComponent("Dbg.csproj"), atomically: true, encoding: .utf8)
         let program = dir.appendingPathComponent("Program.cs")
         try source.write(to: program, atomically: true, encoding: .utf8)
         let build = Process()
-        build.executableURL = try #require(ToolLocator.find("dotnet"))
+        build.executableURL = ToolLocator.find("dotnet")
         build.arguments = ["build", "-nologo", "-v:q"]
         build.currentDirectoryURL = dir
         build.environment = ToolLocator.environment()
         build.standardOutput = FileHandle.nullDevice
         try build.run()
         build.waitUntilExit()
-        #expect(build.terminationStatus == 0)
+        try #require(build.terminationStatus == 0)
         return (dir, program, dir.appendingPathComponent("bin/Debug/net10.0/Dbg.dll").path)
     }
 
@@ -101,6 +101,14 @@ import Testing
             "expression": "total * 2 + p.Y", "frameId": .int(frames[0].id), "context": "hover",
         ])
         #expect(evaluated["result"]?.stringValue == "18")
+        do {
+            let watched = try await client.request("evaluate", arguments: [
+                "expression": "p.X * 10 + p.Y", "frameId": .int(frames[0].id), "context": "watch",
+            ])
+            #expect(watched["result"]?.stringValue == "34", "watch: \(watched)")
+        } catch {
+            Issue.record("watch evaluate failed: \(error)")
+        }
 
         _ = try await client.request("continue", arguments: ["threadId": .int(thread)])
         var sawOutput = false

@@ -131,8 +131,19 @@ final class DebugSession {
     }
 
     private func refreshWatches() async {
+        guard state == .stopped, let frame = selectedFrameID else { return }
         for expression in watches {
-            watchValues[expression] = await evaluate(expression, context: "watch") ?? "—"
+            do {
+                let body = try await client.request("evaluate", arguments: [
+                    "expression": .string(expression), "frameId": .int(frame), "context": "watch",
+                ])
+                watchValues[expression] = body["result"]?.stringValue ?? "—"
+            } catch DAPClient.DAPError.request(_, let message) {
+                // netcoredbg's evaluator is limited (e.g. no members of call results): say why.
+                watchValues[expression] = "⚠ " + message.replacingOccurrences(of: "error: ", with: "")
+            } catch {
+                watchValues[expression] = "—"
+            }
         }
     }
 
