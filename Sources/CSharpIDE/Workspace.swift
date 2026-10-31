@@ -56,7 +56,7 @@ enum TestScope: Equatable {
 }
 
 enum SidebarMode: Hashable {
-    case files, search, outline, git
+    case files, solution, search, outline, git
 }
 
 /// A row in the Open Quickly palette: a file or a symbol.
@@ -445,6 +445,59 @@ final class Workspace {
     func restore() { runDotnet(["restore"] + buildTarget) }
     /// Whitespace, style and analyzer fixes across the solution, following .editorconfig.
     func formatSolution() { runDotnet(["format"] + buildTarget + ["-v", "d"]) }
+
+    // MARK: - Solution explorer / NuGet
+
+    /// Project (relative path) → package id → latest version, from the last update check.
+    private(set) var outdatedPackages: [String: [String: String]] = [:]
+    private(set) var isCheckingOutdated = false
+    /// The project the Add Package sheet targets (nil = sheet closed).
+    var addingPackageToProject: String?
+
+    /// `dotnet list package --outdated` across the solution (restores first, needs network).
+    func checkOutdatedPackages() {
+        guard let rootURL, !isCheckingOutdated else { return }
+        isCheckingOutdated = true
+        Task {
+            let result = await dotnetCapture(["list"] + buildTarget + ["package", "--outdated", "--format", "json"])
+            isCheckingOutdated = false
+            let rootPath = Self.key(for: rootURL)
+            var outdated: [String: [String: String]] = [:]
+            for package in NuGet.parseOutdated(result.output) {
+                let path = Self.key(for: URL(fileURLWithPath: package.project))
+                let relative = path.hasPrefix(rootPath + "/") ? String(path.dropFirst(rootPath.count + 1)) : path
+                outdated[relative, default: [:]][package.id] = package.latest
+            }
+            outdatedPackages = outdated
+            if result.status != 0 {
+                output = "$ dotnet list package --outdated\n" + result.output
+                bottomTab = .output
+            }
+        }
+    }
+
+    /// `dotnet add <project> package <id> [--version v | --prerelease]`.
+    func addPackage(_ id: String, version: String? = nil, prerelease: Bool = false, to project: String) {
+        var arguments = ["add", project, "package", id]
+        if let version { arguments += ["--version", version] } else if prerelease { arguments.append("--prerelease") }
+        outdatedPackages[project]?[id] = nil
+        runDotnet(arguments)
+    }
+
+    func updatePackage(_ id: String, in project: String) {
+        guard let latest = outdatedPackages[project]?[id] else { return }
+        addPackage(id, version: latest, to: project)
+    }
+
+    func removePackage(_ id: String, from project: String) {
+        outdatedPackages[project]?[id] = nil
+        runDotnet(["remove", project, "package", id])
+    }
+
+    func openProjectFile(_ project: String) {
+        guard let rootURL else { return }
+        openFile(rootURL.appendingPathComponent(project))
+    }
 
     // MARK: - Session
 

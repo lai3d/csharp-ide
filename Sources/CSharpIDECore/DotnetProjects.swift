@@ -10,6 +10,10 @@ public struct DotnetProject: Sendable, Hashable, Identifiable {
     /// A test project (Microsoft.NET.Test.Sdk, xUnit / NUnit / MSTest, or IsTestProject).
     public let isTest: Bool
     public let targetFrameworks: [String]
+    /// `<PackageReference>`s, in file order.
+    public var packages: [PackageReference] = []
+    /// `<ProjectReference>`s, as paths relative to the workspace root.
+    public var projectReferences: [String] = []
 
     public var id: String { path }
     /// Runnable and not a test project (xUnit v3 / MSTest runner test projects are Exe too).
@@ -62,8 +66,21 @@ public enum DotnetProjects {
         let frameworks = (property("TargetFrameworks", in: xml) ?? property("TargetFramework", in: xml) ?? "")
             .split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         let name = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
-        return DotnetProject(path: path, name: name, isExecutable: isExecutable, isTest: isTest,
-                             targetFrameworks: frameworks)
+        var project = DotnetProject(path: path, name: name, isExecutable: isExecutable, isTest: isTest,
+                                    targetFrameworks: frameworks)
+        let references = ReferenceParser.parse(xml)
+        project.packages = references.packages
+        let directory = (path as NSString).deletingLastPathComponent
+        project.projectReferences = references.projects.map { include in
+            let relative = include.replacingOccurrences(of: "\\", with: "/")
+            var parts: [Substring] = []
+            for part in ((directory as NSString).appendingPathComponent(relative)).split(separator: "/") {
+                if part == "." { continue }
+                if part == "..", let last = parts.last, last != ".." { parts.removeLast() } else { parts.append(part) }
+            }
+            return parts.joined(separator: "/")
+        }
+        return project
     }
 
     /// Solutions under `root` (relative paths), shallowest first.
@@ -114,6 +131,69 @@ public enum DotnetProjects {
         guard let attr = tag.range(of: "\(name)=\"") ,
               let quote = tag.range(of: "\"", range: attr.upperBound..<tag.endIndex) else { return nil }
         return String(tag[attr.upperBound..<quote.lowerBound])
+    }
+}
+
+/// A NuGet dependency of a project. `version` is nil under central package management
+/// (Directory.Packages.props) or for `Update=` items.
+public struct PackageReference: Sendable, Hashable, Identifiable {
+    public let name: String
+    public let version: String?
+    public var id: String { name }
+
+    public init(name: String, version: String?) {
+        self.name = name
+        self.version = version
+    }
+}
+
+/// `<PackageReference Include=… Version=…/>` (Version as attribute or child element) and
+/// `<ProjectReference Include=…/>` items of a project file.
+private final class ReferenceParser: NSObject, XMLParserDelegate {
+    var packages: [PackageReference] = []
+    var projects: [String] = []
+    private var pending: (name: String, version: String?)?
+    private var inVersion = false
+    private var text = ""
+
+    static func parse(_ xml: String) -> ReferenceParser {
+        let delegate = ReferenceParser()
+        let parser = XMLParser(data: Data(xml.utf8))
+        parser.delegate = delegate
+        parser.parse()
+        return delegate
+    }
+
+    func parser(_ parser: XMLParser, didStartElement element: String, namespaceURI: String?,
+                qualifiedName: String?, attributes: [String: String] = [:]) {
+        switch element {
+        case "PackageReference":
+            if let name = attributes["Include"] { pending = (name, attributes["Version"] ?? attributes["VersionOverride"]) }
+        case "ProjectReference":
+            if let include = attributes["Include"] { projects.append(include) }
+        case "Version" where pending != nil:
+            inVersion = true
+            text = ""
+        default:
+            break
+        }
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        if inVersion { text += string }
+    }
+
+    func parser(_ parser: XMLParser, didEndElement element: String, namespaceURI: String?, qualifiedName: String?) {
+        switch element {
+        case "Version" where inVersion:
+            inVersion = false
+            pending?.version = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        case "PackageReference":
+            if let pending { packages.append(PackageReference(name: pending.name, version: pending.version)) }
+            pending = nil
+        default:
+            break
+        }
     }
 }
 

@@ -23,7 +23,10 @@ from [csharp-ls](https://github.com/razzmatazz/csharp-language-server) (Roslyn),
 
 **Project**
 - Sidebar file tree that follows changes on disk; `bin/` and `obj/` next to projects are hidden
-- Projects and solutions (`.csproj`, `.sln`, `.slnx`) detected automatically
+- Projects and solutions (`.csproj`, `.sln`, `.slnx`) detected automatically; a Solution sidebar lists
+  each project's project references and NuGet packages
+- NuGet: search nuget.org and add packages, check for updates (packages with a newer version are flagged),
+  update or remove from the context menu
 - Find in project (⇧⌘F): match case, whole word, regex
 - Open Quickly (⌘P / ⇧⌘O): fuzzy file finder + workspace symbols; Outline sidebar for the current file
 - Git: status badges, branch in the title bar, inline blame, staging and commits
@@ -35,6 +38,9 @@ from [csharp-ls](https://github.com/razzmatazz/csharp-language-server) (Roslyn),
 - Go to definition (⌘-click / ⌃⌘J), implementation (⌥⌘J), type definition, back (⌃⌘←);
   find references (⇧⌘R), call hierarchy (⌃⌥H)
 - Rename symbol across files (⌃⌘E), quick fixes and refactorings (⌥↩)
+- Format on save (organize usings + Roslyn formatter); `.editorconfig` indentation and style respected;
+  Format Solution runs `dotnet format`
+- ⌘-click into framework / package types opens their decompiled source
 
 **Build, run, test & debug**
 - `dotnet build` (⌘B), rebuild, clean, restore; MSBuild errors land in Problems, `File.cs(12,5)` links in Output
@@ -42,6 +48,7 @@ from [csharp-ls](https://github.com/razzmatazz/csharp-language-server) (Roslyn),
   environment → Run (⌘R), stop (⌘.)
 - Tests via `dotnet test` (xUnit, NUnit, MSTest): Tests panel with messages and clickable stack traces,
   gutter ▶ / ✓ / ✗, run all (⌘U), project (⌃⌘U) or the test at the cursor (⌃⌥⌘U)
+- Test with Coverage (coverlet): covered / uncovered lines tinted in the editor, per-file percentages
 - Debugger (netcoredbg, ⌥⌘R): breakpoints (with conditions), step, call stack, variables, watches;
   debug the test at the cursor
 

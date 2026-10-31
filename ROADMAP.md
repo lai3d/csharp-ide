@@ -34,8 +34,8 @@ Toolchain on the dev Mac: .NET 10 SDK in `~/.dotnet` (dotnet-install.sh, no sudo
 
 | # | Item | Notes | Est. |
 |---|---|---|---|
-| 2.1 | ⬜ Solution explorer | Projects / dependencies / NuGet packages from the `.sln` + `.csproj` | 0.6h |
-| 2.2 | ⬜ NuGet | Search / add / update packages (`dotnet add package`, `dotnet list package --outdated`) | 0.6h |
+| 2.1 | ✅ Solution explorer | Solution sidebar: projects (kind, target frameworks) → project references + PackageReferences (attribute / child `Version`, central versions); open, build, run, test from the context menu | 0.6h |
+| 2.2 | ✅ NuGet | nuget.org search via the v3 service index (Add Package sheet, prerelease toggle); `dotnet list package --outdated --format json` flags updates; update / remove via `dotnet add` / `dotnet remove` | 0.6h |
 | 2.3 | ✅ Format | Format on save (organize usings + csharp-ls); `.editorconfig` resolved per file (globs, root, nearest wins) for editor Tab/indent and LSP options — csharp-ls applies its style rules; .NET ▸ Format Solution runs `dotnet format` | 0.3h |
 | 2.4 | ✅ Decompiled sources | Go to definition into compiled assemblies: csharp-ls `metadataUris` → `csharp/metadata` → cached read-only tab (hover / definition keep working inside it via its csharp:/ URI) | 0.4h |
 | 2.5 | ✅ Coverage | `dotnet test --collect "XPlat Code Coverage"` → coverlet cobertura reports merged per line → editor tint + per-file % in Tests. Folders with several projects and no .sln get a generated .slnx (in Caches) so Build/Test All work | 0.5h |

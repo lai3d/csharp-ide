@@ -420,3 +420,46 @@ import CSharpIDECore
         #expect(workspace.diagnostics[Workspace.key(for: decompiled.url)] == nil)
     }
 }
+
+@MainActor
+@Suite struct WorkspaceNuGetTests {
+    /// Add an old version, see it reported outdated, update it, remove it (needs nuget.org).
+    @Test(.enabled(if: ToolLocator.find("dotnet") != nil), .timeLimit(.minutes(5)))
+    func addsChecksUpdatesAndRemovesPackages() async throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("csharpide-nuget-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let dir = base.canonicalFileURL
+        let csproj = dir.appendingPathComponent("Lib.csproj")
+        try """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+            </Project>
+            """.write(to: csproj, atomically: true, encoding: .utf8)
+        let workspace = Workspace()
+        await workspace.openFolder(dir)
+        func settle() async throws {
+            while workspace.isRunning || workspace.isCheckingOutdated { try await Task.sleep(for: .milliseconds(200)) }
+            workspace.refreshProjects()
+        }
+
+        workspace.addPackage("Humanizer.Core", version: "2.8.26", to: "Lib.csproj")
+        try await settle()
+        #expect(workspace.projects.first?.packages == [PackageReference(name: "Humanizer.Core", version: "2.8.26")],
+                "output:\n\(workspace.output)")
+
+        workspace.checkOutdatedPackages()
+        try await settle()
+        let latest = try #require(workspace.outdatedPackages["Lib.csproj"]?["Humanizer.Core"], "output:\n\(workspace.output)")
+        #expect(latest != "2.8.26")
+
+        workspace.updatePackage("Humanizer.Core", in: "Lib.csproj")
+        try await settle()
+        #expect(workspace.projects.first?.packages.first?.version == latest)
+        #expect(workspace.outdatedPackages["Lib.csproj"]?["Humanizer.Core"] == nil)
+
+        workspace.removePackage("Humanizer.Core", from: "Lib.csproj")
+        try await settle()
+        #expect(workspace.projects.first?.packages.isEmpty == true)
+    }
+}

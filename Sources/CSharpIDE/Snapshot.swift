@@ -83,6 +83,16 @@ enum Snapshot {
                 workspace.quickOpenQuery = query
                 try? await Task.sleep(for: .milliseconds(900))
             }
+            if args.contains("--snapshot-solution"), let workspace {
+                workspace.sidebarMode = .solution
+                workspace.checkOutdatedPackages()
+                for _ in 0..<300 where workspace.isCheckingOutdated { try? await Task.sleep(for: .milliseconds(100)) }
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+            if value("--snapshot-nuget") != nil, let workspace, let project = workspace.projects.first {
+                workspace.addingPackageToProject = project.path
+                try? await Task.sleep(for: .seconds(4))
+            }
             if args.contains("--snapshot-outline"), let workspace {
                 workspace.sidebarMode = .outline
                 try? await Task.sleep(for: .milliseconds(1200))

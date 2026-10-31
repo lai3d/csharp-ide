@@ -59,6 +59,12 @@ struct ContentView: View {
                                     set: { workspace.isEditingRunConfigurations = $0 })) {
             RunConfigurationsSheet().environment(workspace)
         }
+        .sheet(isPresented: Binding(get: { workspace.addingPackageToProject != nil },
+                                    set: { if !$0 { workspace.addingPackageToProject = nil } })) {
+            if let project = workspace.addingPackageToProject {
+                AddPackageSheet(project: project).environment(workspace)
+            }
+        }
     }
 }
 
@@ -122,6 +128,7 @@ struct Sidebar: View {
         VStack(spacing: 0) {
             Picker("Sidebar", selection: $workspace.sidebarMode) {
                 Image(systemName: "folder").help("Files").tag(SidebarMode.files)
+                Image(systemName: "shippingbox").help("Solution: projects, references, NuGet packages").tag(SidebarMode.solution)
                 Image(systemName: "magnifyingglass").help("Find in Project (⇧⌘F)").tag(SidebarMode.search)
                 Image(systemName: "list.bullet.indent").help("Outline").tag(SidebarMode.outline)
                 Image(systemName: "arrow.triangle.branch").help("Source Control (⌃⇧G)").tag(SidebarMode.git)
@@ -132,6 +139,7 @@ struct Sidebar: View {
             .padding(.vertical, 6)
             switch workspace.sidebarMode {
             case .files: FileTreeView()
+            case .solution: SolutionView()
             case .search: SearchView()
             case .outline: OutlineView()
             case .git: SourceControlView()
