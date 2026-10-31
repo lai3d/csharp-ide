@@ -411,9 +411,20 @@ final class Workspace {
         solutions = DotnetProjects.solutions(under: rootURL)
     }
 
-    /// What Build / Test operate on: the solution, else the only project, else the folder.
+    /// What Build / Test operate on: the solution, else the only project, else a generated
+    /// solution of every project in the folder (kept in Caches, outside the user's tree).
     var buildTarget: [String] {
-        DotnetProjects.buildTarget(solutions: solutions, projects: projects).map { [$0] } ?? []
+        if let target = DotnetProjects.buildTarget(solutions: solutions, projects: projects) { return [target] }
+        guard let rootURL, projects.count > 1 else { return [] }
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("CSharpIDE/solutions", isDirectory: true)
+        let url = DotnetProjects.generatedSolutionURL(root: rootURL, in: caches)
+        let xml = DotnetProjects.generatedSolution(root: rootURL, projects: projects)
+        if (try? String(contentsOf: url, encoding: .utf8)) != xml {
+            try? FileManager.default.createDirectory(at: caches, withIntermediateDirectories: true)
+            try? xml.write(to: url, atomically: true, encoding: .utf8)
+        }
+        return [url.path]
     }
 
     private func saveRunConfigurations() {
@@ -1848,8 +1859,22 @@ final class Workspace {
         if measure { loadCoverage(files.filter { $0.lastPathComponent == "coverage.cobertura.xml" }) }
     }
 
-    /// Coverage (cobertura) lands with roadmap item 2.5.
-    private func loadCoverage(_ files: [URL]) {}
+    /// Folds coverlet's cobertura reports (one per test project) into `coverage`, keyed like documents.
+    private func loadCoverage(_ files: [URL]) {
+        var report = CoverageReport()
+        for file in files {
+            guard let data = try? Data(contentsOf: file) else { continue }
+            report.merge(CoverageReport.parseCobertura(data))
+        }
+        var keyed = CoverageReport()
+        for (path, file) in report.files {
+            keyed.files[Self.key(for: URL(fileURLWithPath: path)), default: .init()].lines.merge(file.lines) { $0 || $1 }
+        }
+        coverage = keyed
+        if files.isEmpty, !testReport.tests.isEmpty {
+            appendOutput("No coverage report: add the coverlet.collector package to the test project.\n")
+        }
+    }
 
     func clearCoverage() {
         coverage = nil

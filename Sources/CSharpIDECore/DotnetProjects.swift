@@ -83,6 +83,24 @@ public enum DotnetProjects {
         return nil
     }
 
+    /// A `.slnx` listing every project (absolute paths), for folders that have several projects
+    /// but no solution, so build / test / clean still run as one command.
+    public static func generatedSolution(root: URL, projects: [DotnetProject]) -> String {
+        let escape = { (s: String) in
+            s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "\"", with: "&quot;")
+                .replacingOccurrences(of: "<", with: "&lt;")
+        }
+        let lines = projects.map { "  <Project Path=\"\(escape(root.appendingPathComponent($0.path).path))\" />" }
+        return "<Solution>\n" + lines.joined(separator: "\n") + "\n</Solution>\n"
+    }
+
+    /// Where the generated solution for `root` lives: a stable name under `directory`.
+    public static func generatedSolutionURL(root: URL, in directory: URL) -> URL {
+        var hash: UInt64 = 0xcbf29ce484222325  // FNV-1a: stable across launches, unlike hashValue
+        for byte in root.path.utf8 { hash = (hash ^ UInt64(byte)) &* 0x100000001b3 }
+        return directory.appendingPathComponent("\(root.lastPathComponent)-\(String(hash, radix: 16)).slnx")
+    }
+
     private static func property(_ name: String, in xml: String) -> String? {
         guard let open = xml.range(of: "<\(name)>"),
               let close = xml.range(of: "</\(name)>", range: open.upperBound..<xml.endIndex) else { return nil }
