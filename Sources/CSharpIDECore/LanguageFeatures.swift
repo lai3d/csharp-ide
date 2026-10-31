@@ -339,8 +339,8 @@ public struct InlayHint: Sendable, Hashable {
         }
     }
 
-    /// gopls settings that turn the hints on (sent as initializationOptions).
-    public static var goplsSettings: JSONValue { GoplsSettings.default }
+    /// Server settings sent as initializationOptions (csharp-ls has hints on by default).
+    public static var serverSettings: JSONValue { CSharpLSSettings.default }
 }
 
 // MARK: - Folding

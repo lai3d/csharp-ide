@@ -154,7 +154,7 @@ struct CodeEditorView: NSViewRepresentable {
             coordinator.applyExternalChange(text)
         } else if coordinator.appliedDiagnostics != diagnostics || coordinator.appliedHighlightGo != highlightGo {
             coordinator.applyStyling()
-            coordinator.scheduleInlayHints(after: .milliseconds(150))  // gopls re-checked the file
+            coordinator.scheduleInlayHints(after: .milliseconds(150))  // csharp-ls re-checked the file
         }
         if coordinator.appliedShowInlayHints != showInlayHints || coordinator.appliedEpoch != languageServerEpoch {
             coordinator.appliedShowInlayHints = showInlayHints
@@ -354,7 +354,7 @@ struct CodeEditorView: NSViewRepresentable {
 
         // MARK: Folding
 
-        /// Foldable regions from gopls: the line they start on and the range folding hides.
+        /// Foldable regions from csharp-ls: the line they start on and the range folding hides.
         private var foldRegions: [(line: Int, range: NSRange)] = []
         /// Currently folded (hidden) ranges, sorted. Mirrored into `foldingDelegate` for layout.
         private(set) var folded: [NSRange] = [] {
@@ -469,7 +469,7 @@ struct CodeEditorView: NSViewRepresentable {
             let color: NSColor
         }
 
-        /// gopls semantic coloring, layered over the regex lexer.
+        /// csharp-ls semantic coloring, layered over the regex lexer.
         private var semanticRuns: [SemanticRun] = []
         var appliedShowInlayHints: Bool?
         var appliedEpoch: Int?
@@ -513,7 +513,7 @@ struct CodeEditorView: NSViewRepresentable {
                     guard let color = EditorTheme.color(forSemantic: token.type, modifiers: token.modifiers) else { return nil }
                     let start = index.offset(of: TextPosition(line: token.line, character: token.start))
                     let range = NSRange(location: start, length: token.length)
-                    // gopls marks import paths ("fmt") as namespaces: keep them string-colored.
+                    // csharp-ls marks import paths ("fmt") as namespaces: keep them string-colored.
                     guard NSMaxRange(range) <= ns.length, ns.character(at: start) != 0x22 else { return nil }
                     return SemanticRun(range: range, color: color)
                 }

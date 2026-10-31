@@ -8,7 +8,7 @@ struct SettingsView: View {
             EditorSettingsTab()
                 .tabItem { Label("Editor", systemImage: "character.cursor.ibeam") }
             ToolsSettingsTab()
-                .tabItem { Label("Go Tools", systemImage: "wrench.and.screwdriver") }
+                .tabItem { Label(".NET Tools", systemImage: "wrench.and.screwdriver") }
         }
         .frame(width: 520)
         .padding(20)
@@ -57,14 +57,14 @@ private struct ToolsSettingsTab: View {
     var body: some View {
         Form {
             Section {
-                ToolPathRow(name: "go", hint: "https://go.dev/dl/")
-                ToolPathRow(name: "gopls", hint: "go install golang.org/x/tools/gopls@latest")
-                ToolPathRow(name: "dlv", hint: "go install github.com/go-delve/delve/cmd/dlv@latest")
+                ToolPathRow(name: "dotnet", hint: "https://dotnet.microsoft.com/download")
+                ToolPathRow(name: "csharp-ls", hint: "dotnet tool install --global csharp-ls")
+                ToolPathRow(name: "netcoredbg", hint: "https://github.com/Samsung/netcoredbg/releases")
             } footer: {
                 Text("Leave empty to search PATH, $GOBIN, $GOPATH/bin, ~/go/bin and Homebrew.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Button("Restart gopls") { Task { await workspace.restartLanguageServer() } }
+            Button("Restart csharp-ls") { Task { await workspace.restartLanguageServer() } }
                 .disabled(workspace.rootURL == nil)
         }
     }

@@ -44,7 +44,7 @@ extension FocusedValues {
     }
 }
 
-/// One window = one project (its own documents, gopls, debugger).
+/// One window = one project (its own documents, csharp-ls, debugger).
 struct WorkspaceWindow: View {
     @State private var workspace = Workspace()
 
@@ -291,7 +291,7 @@ struct CSharpIDECommands: Commands {
                     .disabled(!workspace.isGoFile)
                 Toggle("Format on Save", isOn: $formatOnSave)
                 Divider()
-                Button("Restart gopls") { Task { await workspace.restartLanguageServer() } }
+                Button("Restart csharp-ls") { Task { await workspace.restartLanguageServer() } }
             }
             }
 }

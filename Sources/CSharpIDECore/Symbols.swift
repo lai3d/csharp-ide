@@ -44,7 +44,8 @@ public struct SymbolNode: Sendable, Hashable, Identifiable {
 
     /// Parses `DocumentSymbol[]` (hierarchical) or `SymbolInformation[]` / `WorkspaceSymbol[]` (flat).
     public static func parseAll(_ result: JSONValue) -> [SymbolNode] {
-        (result.arrayValue ?? []).compactMap(parse)
+        // csharp-ls wraps a document's outline in a File symbol (kind 1); show its contents instead.
+        (result.arrayValue ?? []).compactMap(parse).flatMap { $0.kind == 1 ? $0.children ?? [] : [$0] }
     }
 
     private static func parse(_ value: JSONValue) -> SymbolNode? {

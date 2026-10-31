@@ -28,7 +28,7 @@ enum EditorTheme {
         [.font: font(settings), .foregroundColor: NSColor.textColor, .paragraphStyle: paragraphStyle(settings)]
     }
 
-    /// Colors for what only gopls knows (the regex lexer handles keywords, strings, …).
+    /// Colors for what only csharp-ls knows (the regex lexer handles keywords, strings, …).
     static func color(forSemantic type: String, modifiers: Set<String>) -> NSColor? {
         switch type {
         case "namespace": .secondaryLabelColor  // package qualifiers: fmt.Println

@@ -93,41 +93,52 @@ import Testing
     }
 }
 
-/// End-to-end check against a real gopls (skipped when gopls isn't installed).
-@Suite struct GoplsIntegrationTests {
-    @Test(.enabled(if: ToolLocator.find("gopls") != nil), .timeLimit(.minutes(1)))
+/// End-to-end check against a real csharp-ls (skipped when .NET / csharp-ls aren't installed).
+@Suite struct CSharpLSIntegrationTests {
+    @Test(.enabled(if: CSharpLSFixture.isAvailable), .timeLimit(.minutes(2)))
     func publishesDiagnosticsForBrokenCode() async throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("goide-test-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
-        try "module example.com/t\n\ngo 1.22\n".write(to: dir.appendingPathComponent("go.mod"), atomically: true, encoding: .utf8)
-        let source = "package main\n\nfunc main() {\n\tundefinedThing()\n}\n"
-        let file = dir.appendingPathComponent("main.go")
-        try source.write(to: file, atomically: true, encoding: .utf8)
+        let source = "namespace T;\n\npublic static class Program\n{\n    public static void Main() => UndefinedThing();\n}\n"
+        let fixture = try await CSharpLSFixture(files: ["Program.cs": source])
+        try fixture.open("Program.cs")
+        let diagnostics = try #require(await fixture.firstDiagnostics(for: "Program.cs"))
+        #expect(diagnostics.contains { $0.message.contains("UndefinedThing") && $0.start.line == 4 })
+        await fixture.shutdown()
+    }
 
-        let (stream, continuation) = AsyncStream<[Diagnostic]>.makeStream()
-        let client = LSPClient()
-        client.onNotification = { method, params in
-            if method == "textDocument/publishDiagnostics",
-               let published = Diagnostic.parsePublish(params), !published.diagnostics.isEmpty {
-                continuation.yield(published.diagnostics)
+    @Test(.enabled(if: CSharpLSFixture.isAvailable), .timeLimit(.minutes(2)))
+    func hoversCompletesAndJumpsToDefinition() async throws {
+        let source = """
+            namespace T;
+
+            public static class Program
+            {
+                public static void Main()
+                {
+                    var g = new Greeter();
+                    Console.WriteLine(g.Greet());
+                }
             }
-        }
-        try client.start(executable: try #require(ToolLocator.find("gopls")),
-                         environment: ToolLocator.environment(), currentDirectory: dir)
-        _ = try await client.request("initialize", params: [
-            "processId": .int(Int(getpid())),
-            "rootUri": .string(dir.absoluteString),
-            "capabilities": [:],
-        ])
-        try client.notify("initialized", params: [:])
-        try client.notify("textDocument/didOpen", params: [
-            "textDocument": ["uri": .string(file.absoluteString), "languageId": "go", "version": 1, "text": .string(source)],
-        ])
 
-        var iterator = stream.makeAsyncIterator()
-        let diagnostics = try #require(await iterator.next())
-        #expect(diagnostics.contains { $0.message.contains("undefinedThing") && $0.start.line == 3 })
-        await client.shutdown()
+            public class Greeter
+            {
+                public string Greet() => "hi";
+            }
+            """
+        let fixture = try await CSharpLSFixture(files: ["Program.cs": source])
+        try fixture.open("Program.cs")
+        let at: (Int, Int) -> JSONValue = { line, character in
+            ["textDocument": ["uri": fixture.uri("Program.cs")], "position": ["line": .int(line), "character": .int(character)]]
+        }
+        // `Greet` in g.Greet()
+        let hover = try await fixture.poll("textDocument/hover", at(7, 30))
+        #expect(HoverContent.parse(hover)?.contains("Greet()") == true)
+
+        let definition = try await fixture.poll("textDocument/definition", at(7, 30)) { !Location.parseAll($0).isEmpty }
+        #expect(Location.parseAll(definition).first?.start.line == 13)
+
+        // Members after `g.`
+        let completion = try await fixture.poll("textDocument/completion", at(7, 28)) { !CompletionItem.parseList($0).isEmpty }
+        #expect(CompletionItem.parseList(completion).contains { $0.label == "Greet" })
+        await fixture.shutdown()
     }
 }

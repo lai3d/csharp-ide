@@ -186,7 +186,7 @@ enum Snapshot {
                 }
                 try? await Task.sleep(for: .milliseconds(300))
             }
-            if ProcessInfo.processInfo.environment["GOIDE_DEBUG_TEXT"] != nil, let text = workspace?.activeDocument?.text {
+            if ProcessInfo.processInfo.environment["CSHARPIDE_DEBUG_TEXT"] != nil, let text = workspace?.activeDocument?.text {
                 print(text.split(separator: "\n", omittingEmptySubsequences: false).enumerated()
                     .map { "\($0.offset + 1): \($0.element.debugDescription)" }.joined(separator: "\n"))
             }
@@ -209,7 +209,7 @@ enum Snapshot {
                 try? await Task.sleep(for: .milliseconds(300))
             }
 
-            if ProcessInfo.processInfo.environment["GOIDE_DEBUG_LAYOUT"] != nil,
+            if ProcessInfo.processInfo.environment["CSHARPIDE_DEBUG_LAYOUT"] != nil,
                let textView = NSApp.windows.first?.firstResponder as? NSTextView, let scroll = textView.enclosingScrollView {
                 print("clip bounds=\(scroll.contentView.bounds) insets=\(scroll.contentView.contentInsets) scroll=\(scroll.frame)")
             }

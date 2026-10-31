@@ -5,3 +5,5 @@ DerivedData/
 xcuserdata/
 .swiftpm/
 build/
+bin/
+obj/

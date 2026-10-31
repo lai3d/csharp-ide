@@ -35,35 +35,4 @@ import Testing
         #expect(ranked.first?.0 == "greet.go")
     }
 
-    @Test(.enabled(if: ToolLocator.find("gopls") != nil), .timeLimit(.minutes(1)))
-    func goplsDocumentAndWorkspaceSymbols() async throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("goide-sym-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
-        try "module example.com/t\n\ngo 1.22\n".write(to: dir.appendingPathComponent("go.mod"), atomically: true, encoding: .utf8)
-        let source = "package main\n\ntype Server struct {\n\tAddr string\n}\n\nfunc (s *Server) Start() {}\n\nfunc main() {}\n"
-        let file = dir.appendingPathComponent("main.go")
-        try source.write(to: file, atomically: true, encoding: .utf8)
-
-        let client = LSPClient()
-        try client.start(executable: try #require(ToolLocator.find("gopls")),
-                         environment: ToolLocator.environment(), currentDirectory: dir)
-        _ = try await client.request("initialize", params: [
-            "processId": .int(Int(getpid())), "rootUri": .string(dir.absoluteString),
-            "capabilities": ["textDocument": ["documentSymbol": ["hierarchicalDocumentSymbolSupport": true]]],
-        ])
-        try client.notify("initialized", params: [:])
-        try client.notify("textDocument/didOpen", params: [
-            "textDocument": ["uri": .string(file.absoluteString), "languageId": "go", "version": 1, "text": .string(source)],
-        ])
-        let outline = SymbolNode.parseAll(try await client.request("textDocument/documentSymbol", params: [
-            "textDocument": ["uri": .string(file.absoluteString)],
-        ]))
-        #expect(outline.map(\.name).contains("Server"))
-        #expect(outline.first { $0.name == "Server" }?.children?.map(\.name) == ["Addr"])
-
-        let symbols = SymbolNode.parseAll(try await client.request("workspace/symbol", params: ["query": "Start"]))
-        #expect(symbols.contains { $0.name.contains("Start") && $0.uri?.hasSuffix("/main.go") == true })
-        await client.shutdown()
-    }
 }

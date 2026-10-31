@@ -30,7 +30,7 @@ public final class DAPClient: @unchecked Sendable {
     private var _onEvent: EventHandler?
     private var _onExit: ExitHandler?
     private var exited = false
-    private static let trace = ProcessInfo.processInfo.environment["GOIDE_DAP_TRACE"] != nil
+    private static let trace = ProcessInfo.processInfo.environment["CSHARPIDE_DAP_TRACE"] != nil
 
     public init() {}
 

@@ -1,14 +1,11 @@
 import Foundation
 
-/// gopls settings CSharpIDE relies on (sent as initializationOptions and workspace/configuration).
-public enum GoplsSettings {
+/// csharp-ls settings CSharpIDE sends (initializationOptions and the `csharp` workspace/configuration section).
+public enum CSharpLSSettings {
     public static let `default`: JSONValue = [
-        "hints": [
-            "assignVariableTypes": true, "compositeLiteralFields": true, "constantValues": true,
-            "functionTypeParameters": true, "parameterNames": true, "rangeVariableTypes": true,
+        "csharp": [
+            "applyFormattingOptions": true,
         ],
-        "semanticTokens": true,
-        "usePlaceholders": true,  // function call completions get parameter placeholders
     ]
 }
 
