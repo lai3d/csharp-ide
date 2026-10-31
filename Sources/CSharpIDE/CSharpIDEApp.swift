@@ -62,6 +62,13 @@ struct WorkspaceWindow: View {
 struct CSharpIDEApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
+    init() {
+        // `CSharpIDE <folder>` passes the folder in argv. By default AppKit also treats such arguments
+        // as documents to open, and apps built against the macOS 26 SDK then skip their first window
+        // on a launch with no saved state. The folder is handled by the workspace instead.
+        UserDefaults.standard.register(defaults: ["NSTreatUnknownArgumentsAsOpen": "NO"])
+    }
+
     var body: some Scene {
         WindowGroup("CSharpIDE", id: "workspace") {
             WorkspaceWindow()

@@ -1,5 +1,7 @@
 name: Release
 
+# Push a vX.Y.Z tag to publish CSharpIDE-vX.Y.Z.zip as a GitHub Release.
+# IDE Toolbox (lai3d/ide-toolbox) installs and updates from these releases.
 on:
   push:
     tags: ["v*"]
@@ -11,18 +13,24 @@ jobs:
   release:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Select newest Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+
       - name: Bundle CSharpIDE.app
-        run: ./scripts/bundle.sh
+        run: VERSION="${GITHUB_REF_NAME#v}" ./scripts/bundle.sh
+
+      - name: Zip app
+        run: ditto -c -k --keepParent build/CSharpIDE.app "build/CSharpIDE-${GITHUB_REF_NAME}.zip"
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" build/CSharpIDE.zip \
+          gh release create "$GITHUB_REF_NAME" "build/CSharpIDE-${GITHUB_REF_NAME}.zip" \
             --title "CSharpIDE $GITHUB_REF_NAME" \
             --generate-notes \
-            --notes "Ad-hoc signed build: the first time, right-click CSharpIDE.app and choose Open (or run: xattr -dr com.apple.quarantine CSharpIDE.app). Requires macOS 14+, Go, gopls and dlv."
+            --notes "Ad-hoc signed, not notarized: right-click CSharpIDE.app → Open the first time (or run: xattr -dr com.apple.quarantine CSharpIDE.app). Requires macOS 14+, the .NET SDK (8+) and csharp-ls (dotnet tool install --global csharp-ls). The debugger (netcoredbg) downloads on first use."

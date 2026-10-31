@@ -11,19 +11,19 @@ let inset: CGFloat = 100
 let rect = NSRect(x: inset, y: inset, width: size - 2 * inset, height: size - 2 * inset)
 let shape = NSBezierPath(roundedRect: rect, xRadius: 185, yRadius: 185)
 NSShadow().apply { $0.shadowColor = .black.withAlphaComponent(0.3); $0.shadowBlurRadius = 30; $0.shadowOffset = NSSize(width: 0, height: -12) }
-NSGradient(starting: NSColor(red: 0.30, green: 0.83, blue: 0.93, alpha: 1),
-           ending: NSColor(red: 0.00, green: 0.42, blue: 0.62, alpha: 1))!.draw(in: shape, angle: -90)
+NSGradient(starting: NSColor(red: 0.62, green: 0.40, blue: 0.95, alpha: 1),
+           ending: NSColor(red: 0.32, green: 0.12, blue: 0.62, alpha: 1))!.draw(in: shape, angle: -90)
 NSShadow().apply { $0.shadowColor = nil }
 
-// "Go" plus a terminal-style underscore cursor: "Go_".
+// "C#" plus a terminal-style underscore cursor: "C#_".
 let font = NSFont.systemFont(ofSize: 380, weight: .black)
 let rounded = font.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: 380) } ?? font
-let text = NSAttributedString(string: "Go", attributes: [.font: rounded, .foregroundColor: NSColor.white])
+let text = NSAttributedString(string: "C#", attributes: [.font: rounded, .foregroundColor: NSColor.white])
 let textSize = text.size()
 let cursorWidth: CGFloat = 130, gap: CGFloat = 26
 let origin = NSPoint(x: (size - textSize.width - gap - cursorWidth) / 2, y: (size - textSize.height) / 2 + 10)
 text.draw(at: origin)
-NSColor(red: 0.80, green: 1, blue: 1, alpha: 0.95).setFill()
+NSColor(red: 0.90, green: 0.85, blue: 1, alpha: 0.95).setFill()
 NSBezierPath(roundedRect: NSRect(x: origin.x + textSize.width + gap, y: origin.y + rounded.descender.magnitude * 0.55,
                                  width: cursorWidth, height: 46), xRadius: 14, yRadius: 14).fill()
 image.unlockFocus()

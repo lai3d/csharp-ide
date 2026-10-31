@@ -2,58 +2,66 @@
 
 [![CI](https://github.com/lai3d/csharp-ide/actions/workflows/ci.yml/badge.svg)](https://github.com/lai3d/csharp-ide/actions/workflows/ci.yml)
 
-A native macOS IDE for Go, written in Swift (SwiftUI + AppKit).
+A native macOS IDE for C# / .NET, written in Swift (SwiftUI + AppKit). Language intelligence comes
+from [csharp-ls](https://github.com/razzmatazz/csharp-language-server) (Roslyn), debugging from
+[netcoredbg](https://github.com/Samsung/netcoredbg).
 
-> Early but usable: editing, navigation, refactoring, testing and debugging for Go modules.
+> Early but usable: editing, navigation, refactoring, building, testing and debugging .NET projects.
 
 ## Features
 
 **Editor**
 - Tabs with independent buffers, undo and scroll; unsaved-changes prompts
-- Go syntax highlighting refined by gopls semantic tokens; inlay hints for parameter names and inferred types
+- C# syntax highlighting (verbatim / interpolated / raw strings, attributes, preprocessor) refined by
+  semantic tokens; inlay hints for parameter names and inferred types
 - Line-number gutter with error/warning markers, Git change bars and code folding (⌥⌘← / ⌥⌘→)
-- Occurrence highlights for the symbol under the caret; current-line highlight, auto-indent
+- Occurrence highlights, current-line highlight, auto-indent with spaces (configurable)
 - Auto-closing brackets and quotes, toggle comment (⌘/), move / duplicate lines, indent / outdent
-- Snippets: gopls call placeholders and built-ins (`iferr`, `fori`, `forr`, `tt`, …) with Tab stops
-- Breadcrumbs (folder › file › type › function) above the editor
-- Format on save (gofmt + organize imports via gopls), Format Document (⌥⇧F)
+- Snippets with Tab stops: `prop`, `propg`, `ctor`, `foreach`, `try`, `fact`, `theory`, `testm`, …
+- Breadcrumbs (folder › file › namespace › type › member) above the editor
+- Format on save and Format Document (⌥⇧F) via the Roslyn formatter
 
 **Project**
-- Sidebar file tree that follows changes on disk (FSEvents); new/rename/trash from the context menu
-- Open files reload when changed externally (or offer Reload / Keep Mine if you have edits)
+- Sidebar file tree that follows changes on disk; `bin/` and `obj/` next to projects are hidden
+- Projects and solutions (`.csproj`, `.sln`, `.slnx`) detected automatically
 - Find in project (⇧⌘F): match case, whole word, regex
 - Open Quickly (⌘P / ⇧⌘O): fuzzy file finder + workspace symbols; Outline sidebar for the current file
-- Git: status badges in the sidebar, branch in the title bar, inline blame for the caret line
-- Multiple windows, one project each (⇧⌘N)
-- Integrated terminal (⌃`) running your login shell in the project folder
+- Git: status badges, branch in the title bar, inline blame, staging and commits
+- Multiple windows, one project each (⇧⌘N); integrated terminal (⌃`)
 
-**Language (gopls)**
+**Language (csharp-ls)**
 - Live diagnostics: underlines, gutter dots, Problems panel
-- Completion with auto-imports, hover docs, signature help while typing calls
-- Jump to definition (⌘-click / ⌃⌘J), implementation (⌥⌘J), type definition (⌃⌥⌘J) and back (⌃⌘←); find references (⇧⌘R), call hierarchy (⌃⌥H)
+- Completion, hover docs, signature help while typing calls
+- Go to definition (⌘-click / ⌃⌘J), implementation (⌥⌘J), type definition, back (⌃⌘←);
+  find references (⇧⌘R), call hierarchy (⌃⌥H)
 - Rename symbol across files (⌃⌘E), quick fixes and refactorings (⌥↩)
 
-**Run, test & debug**
-- Run configurations (main package, arguments, environment) for Run (⌘R) and Debug; `go build ./...` (⌘B), stop (⌘.)
-- Test coverage (⌃⇧⌘U): covered / uncovered lines tinted, per-file percentages
-- Tests via `go test -json` (⌘U all, ⌃⌘U package, ⌃⌥⌘U at cursor): Tests panel, gutter ▶ / ✓ / ✗
-- Debugger (Delve DAP, ⌥⌘R): click line numbers for breakpoints, continue / step over (F6) / into (F7) / out (F8), call stack, expandable variables; debug a single test
+**Build, run, test & debug**
+- `dotnet build` (⌘B), rebuild, clean, restore; MSBuild errors land in Problems, `File.cs(12,5)` links in Output
+- Run configurations per runnable project: Debug/Release, `launchSettings.json` profile, arguments,
+  environment → Run (⌘R), stop (⌘.)
+- Tests via `dotnet test` (xUnit, NUnit, MSTest): Tests panel with messages and clickable stack traces,
+  gutter ▶ / ✓ / ✗, run all (⌘U), project (⌃⌘U) or the test at the cursor (⌃⌥⌘U)
+- Debugger (netcoredbg, ⌥⌘R): breakpoints (with conditions), step, call stack, variables, watches;
+  debug the test at the cursor
 
 See [ROADMAP.md](ROADMAP.md) for what's next.
 
 ## Requirements
 
 - macOS 14+
-- Swift 6 toolchain (Xcode 16 or later)
-- Go, plus gopls and Delve:
-  `go install golang.org/x/tools/gopls@latest`
-  `go install github.com/go-delve/delve/cmd/dlv@latest`
+- Swift 6 toolchain (Xcode 16 or later) to build from source
+- The .NET SDK (8 or later): [dotnet.microsoft.com/download](https://dotnet.microsoft.com/download)
+- csharp-ls: `dotnet tool install --global csharp-ls`
+- netcoredbg for debugging: CSharpIDE offers to download it on first use (or set a path in Settings)
 
-CSharpIDE looks for `go`, `gopls` and `dlv` on `PATH`, `$GOBIN`, `$GOPATH/bin`, `~/go/bin`, `/opt/homebrew/bin` and `/usr/local/go/bin`, so it works when launched from Finder too.
+CSharpIDE looks for `dotnet` and `csharp-ls` on `PATH`, `~/.dotnet`, `~/.dotnet/tools`,
+`/usr/local/share/dotnet` and Homebrew, and sets `DOTNET_ROOT` for them, so it works when launched
+from Finder too. Paths can be overridden in Settings ▸ .NET Tools.
 
 ## Install
 
-Download `CSharpIDE.zip` from [Releases](https://github.com/lai3d/csharp-ide/releases), unzip, and move
+Download `CSharpIDE-vX.Y.Z.zip` from [Releases](https://github.com/lai3d/csharp-ide/releases), unzip, and move
 `CSharpIDE.app` to Applications. Builds are ad-hoc signed (not notarized), so the first time
 right-click the app and choose **Open** (or run `xattr -dr com.apple.quarantine CSharpIDE.app`).
 
@@ -61,7 +69,7 @@ right-click the app and choose **Open** (or run `xattr -dr com.apple.quarantine 
 
 ```sh
 swift run CSharpIDE Examples/hello     # run in debug, opening the example project
-swift test                         # unit tests + a gopls end-to-end test
+swift test                         # unit tests + csharp-ls / dotnet end-to-end tests
 ./scripts/bundle.sh                # build build/CSharpIDE.app + CSharpIDE.zip (release, ad-hoc signed)
 open build/CSharpIDE.app
 ```
@@ -72,10 +80,10 @@ You can also open `Package.swift` in Xcode.
 
 | Path | What |
 |---|---|
-| `Sources/CSharpIDECore` | UI-independent core: JSON-RPC/LSP client, message framing, Go highlighter, LSP position math, file tree |
+| `Sources/CSharpIDECore` | UI-independent core: LSP + DAP clients, C# highlighter, MSBuild / TRX parsing, project discovery, file tree |
 | `Sources/CSharpIDE` | SwiftUI app: workspace state, editor view, sidebar, panels |
 | `Tests/CSharpIDECoreTests` | swift-testing tests |
-| `Examples/hello` | Small Go module for trying things out |
+| `Examples/hello` | Small console project for trying things out |
 | `scripts/` | `bundle.sh` (app bundle), `make-icon.swift` (regenerates `Resources/AppIcon.icns`) |
 | `.github/workflows/` | CI (build, test, bundle) and tagged releases (`v*` → GitHub Release) |
 

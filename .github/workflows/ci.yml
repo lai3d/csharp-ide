@@ -9,41 +9,39 @@ jobs:
   build-and-test:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # version number from git describe
 
-      - uses: actions/setup-go@v7
+      - name: Select newest Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+
+      - uses: actions/setup-dotnet@v4
         with:
-          go-version: stable
-          cache: false  # no go.sum here; nothing to cache
+          dotnet-version: 10.0.x
 
-      - name: Install gopls and Delve
+      - name: Install csharp-ls
         run: |
-          go install golang.org/x/tools/gopls@latest
-          go install github.com/go-delve/delve/cmd/dlv@latest
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-
-      - name: Allow debugging (Delve)
-        run: sudo DevToolsSecurity -enable || true
+          dotnet tool install --global csharp-ls
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 
       - name: Toolchain
         run: |
           swift --version
-          go version
-          gopls version
-          dlv version
+          dotnet --info | head -20
+          which csharp-ls
 
       - name: Build
         run: swift build
 
+      # The netcoredbg end-to-end tests skip themselves when it isn't installed.
       - name: Test
         run: swift test
 
       - name: Bundle CSharpIDE.app
         run: ./scripts/bundle.sh
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: CSharpIDE-app
           path: build/CSharpIDE.zip
