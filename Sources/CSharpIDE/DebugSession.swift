@@ -32,7 +32,7 @@ final class VariableNode: Identifiable {
     }
 }
 
-/// One Delve debugging session, driven over DAP.
+/// One netcoredbg debugging session, driven over DAP.
 @MainActor
 @Observable
 final class DebugSession {
@@ -58,8 +58,10 @@ final class DebugSession {
 
     var isActive: Bool { state != .terminated }
 
-    /// Launches Delve, sets breakpoints (one-based lines per path) and starts the program.
-    func start(dlv: URL, directory: URL, launch: JSONValue, breakpoints: [String: [Int: String?]]) async {
+    /// Starts netcoredbg, launches (or attaches to) the program, sets breakpoints (one-based lines
+    /// per path) and lets it run. `request` is "launch" or "attach".
+    func start(adapter: URL, directory: URL, request: String = "launch", arguments: JSONValue,
+               breakpoints: [String: [Int: String?]]) async {
         client.onEvent = { event, body in
             Task { @MainActor in self.handle(event: event, body: body) }
         }
@@ -67,16 +69,18 @@ final class DebugSession {
             Task { @MainActor in self.finish() }
         }
         do {
-            try await client.start(dlv: dlv, directory: directory, environment: ToolLocator.environment()) { text in
+            try client.start(adapter: adapter, directory: directory, environment: ToolLocator.environment()) { text in
                 Task { @MainActor in self.onOutput?(text) }
             }
             try await client.request("initialize", arguments: [
-                "clientID": "goide", "clientName": "CSharpIDE", "adapterID": "go",
+                "clientID": "csharpide", "clientName": "CSharpIDE", "adapterID": "coreclr",
                 "linesStartAt1": true, "columnsStartAt1": true, "pathFormat": "path",
                 "supportsVariableType": true,
             ])
-            try await client.request("launch", arguments: launch)
-            await client.waitForEvent("initialized")
+            // netcoredbg answers launch/attach and sends `initialized` in either order.
+            async let initialized: Void = client.waitForEvent("initialized")
+            try await client.request(request, arguments: arguments)
+            await initialized
             for (path, lines) in breakpoints where !lines.isEmpty {
                 await setBreakpoints(path: path, lines: lines)
             }

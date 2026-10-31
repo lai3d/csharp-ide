@@ -1911,7 +1911,7 @@ final class Workspace {
         let key = Self.key(for: document.url)
         let current = breakpointConditions[key]?[line + 1] ?? ""
         guard let condition = Prompt.text(title: "Breakpoint Condition",
-                                          message: "Stop at line \(line + 1) only when this Go expression is true.",
+                                          message: "Stop at line \(line + 1) only when this C# expression is true.",
                                           initial: current, confirm: "Done", allowEmpty: true) else { return }
         breakpoints[key, default: []].insert(line + 1)
         breakpointConditions[key, default: [:]][line + 1] = condition.isEmpty ? nil : condition
@@ -1956,61 +1956,162 @@ final class Workspace {
 
     /// Debugs the test at the caret (in a test project), else the selected run configuration.
     func startDebugging() {
-        guard let rootURL else { return }
         if let document = activeDocument, isTestDocument(document),
            let method = CSharpTestFinder.enclosingTest(in: document.text, at: document.caretOffset) {
-            debug(test: method.fullyQualifiedName, in: document.url.deletingLastPathComponent())
+            debug(test: method.fullyQualifiedName, project: project(containing: document.url)?.path)
         } else if let config = selectedRunConfiguration {
             debug(configuration: config)
-        } else if let document = activeDocument, document.isCSharp {
-            debug(package: document.url.deletingLastPathComponent())
         } else {
-            debug(package: rootURL)
-        }
-    }
-
-    func debug(package dir: URL) {
-        launchDebugger(title: displayPath(Self.key(for: dir)), directory: dir, launch: [
-            "request": "launch", "mode": "debug", "program": .string(Self.key(for: dir)),
-            "cwd": .string(Self.key(for: dir)), "outputMode": "remote",
-        ])
-    }
-
-    func debug(configuration config: RunConfiguration) {
-        guard let rootURL else { return }
-        let dir = Self.key(for: rootURL.appendingPathComponent((config.project as NSString).deletingLastPathComponent))
-        launchDebugger(title: config.name, directory: URL(fileURLWithPath: dir), launch: [
-            "request": "launch", "mode": "debug", "program": .string(dir),
-            "cwd": .string(Self.key(for: rootURL)), "outputMode": "remote",
-            "args": .array(config.argumentList.map(JSONValue.string)),
-            "env": .object(config.environmentVariables.mapValues(JSONValue.string)),
-        ])
-    }
-
-    func debug(test name: String, in dir: URL) {
-        launchDebugger(title: name, directory: dir, launch: [
-            "request": "launch", "mode": "test", "program": .string(Self.key(for: dir)),
-            "cwd": .string(Self.key(for: dir)), "outputMode": "remote",
-            "args": ["-test.run", .string("^\(NSRegularExpression.escapedPattern(for: name))$"), "-test.v"],
-        ])
-    }
-
-    private func launchDebugger(title: String, directory: URL, launch: JSONValue) {
-        guard rootURL != nil else { return }
-        // Build the debug binary outside the project (Delve defaults to the package folder).
-        var launch = launch
-        if case .object(var config) = launch {
-            config["output"] = .string(FileManager.default.temporaryDirectory
-                .appendingPathComponent("goide-debug-\(UUID().uuidString)").path)
-            launch = .object(config)
-        }
-        if let session = debugSession, session.isActive { return }
-        guard let dlv = ToolLocator.find("dlv") else {
-            output = "dlv not found. Install it with:\n  go install github.com/go-delve/delve/cmd/dlv@latest\n"
+            output = "Nothing to debug: add a run configuration (.NET ▸ Edit Run Configurations…) "
+                + "or put the caret in a test method.\n"
             bottomTab = .output
-            return
         }
-        saveAll()
+    }
+
+    /// Builds the project, asks MSBuild for the output dll, then runs `dotnet <dll>` under netcoredbg.
+    func debug(configuration config: RunConfiguration) {
+        guard let rootURL, !isDebugging, !isRunning else { return }
+        Task {
+            guard let adapter = await debuggerExecutable(),
+                  let dotnet = ToolLocator.find("dotnet") else { return }
+            saveAll()
+            output = "Debugging \(config.name)…\n"
+            bottomTab = .debug
+            let projectURL = rootURL.appendingPathComponent(config.project)
+            let framework = projects.first { $0.path == config.project }?.targetFrameworks.first
+            var properties = ["-p:Configuration=\(config.configuration)"]
+            if let framework { properties.append("-p:TargetFramework=\(framework)") }
+            appendOutput("$ dotnet build \(config.project)\n")
+            let build = await dotnetCapture(["build", projectURL.path, "-tl:off", "-nologo", "-v:q"] + properties, echo: true)
+            guard build.status == 0 else {
+                collectBuildDiagnostics()
+                appendOutput("Build failed — not starting the debugger.\n")
+                return
+            }
+            let target = await dotnetCapture(["msbuild", projectURL.path, "-getProperty:TargetPath", "-nologo"] + properties)
+            let dll = target.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard target.status == 0, dll.hasSuffix(".dll"), FileManager.default.fileExists(atPath: dll) else {
+                appendOutput("Couldn't find the built program (TargetPath: \(dll)).\n")
+                return
+            }
+            let cwd = projectURL.deletingLastPathComponent().path
+            let arguments = Netcoredbg.launchArguments(
+                dotnet: dotnet, dll: dll, arguments: config.argumentList, cwd: cwd,
+                environment: ToolLocator.environment().merging(config.environmentVariables) { $1 })
+            launchDebugger(title: config.name, adapter: adapter, directory: URL(fileURLWithPath: cwd),
+                           request: "launch", arguments: arguments)
+        }
+    }
+
+    /// `dotnet test --filter` with VSTEST_HOST_DEBUG=1 (the test host waits for a debugger and
+    /// prints its pid), then attaches netcoredbg to it.
+    func debug(test name: String, project: String?) {
+        guard let rootURL, !isDebugging, !isRunning else { return }
+        Task {
+            guard let adapter = await debuggerExecutable(), let dotnet = ToolLocator.find("dotnet") else { return }
+            saveAll()
+            testRunTitle = String(name.split(separator: ".").last ?? Substring(name))
+            output = "Debugging test \(name)…\n"
+            bottomTab = .debug
+            let process = Process()
+            process.executableURL = dotnet
+            process.arguments = ["test"] + (project.map { [$0] } ?? buildTarget)
+                + ["--filter", "FullyQualifiedName=\(name)", "--logger", "console;verbosity=normal", "-tl:off", "-nologo"]
+            process.currentDirectoryURL = rootURL
+            var environment = ToolLocator.environment()
+            environment["VSTEST_HOST_DEBUG"] = "1"
+            process.environment = environment
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = pipe
+            let buffer = LineBuffer()
+            let attached = AttachOnce()
+            pipe.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                let lines = data.isEmpty ? buffer.flush() : buffer.append(data)
+                if data.isEmpty { handle.readabilityHandler = nil }
+                Task { @MainActor in
+                    for line in lines {
+                        self.appendOutput(line + "\n")
+                        if let pid = Netcoredbg.testHostProcessID(in: line), attached.claim() {
+                            self.launchDebugger(title: self.testRunTitle, adapter: adapter, directory: rootURL,
+                                                request: "attach", arguments: ["processId": .int(pid)])
+                        }
+                    }
+                }
+            }
+            process.terminationHandler = { proc in
+                Task { @MainActor in
+                    self.runProcess = nil
+                    self.isRunning = false
+                    if !attached.claimed { self.collectBuildDiagnostics() }
+                    self.appendOutput("\n[dotnet test exited with status \(proc.terminationStatus)]\n")
+                }
+            }
+            do {
+                isRunning = true
+                try process.run()
+                runProcess = process
+            } catch {
+                isRunning = false
+                appendOutput("Failed to start dotnet test: \(error.localizedDescription)\n")
+            }
+        }
+    }
+
+    /// netcoredbg, offering to download it the first time.
+    private func debuggerExecutable() async -> URL? {
+        if let found = Netcoredbg.find() { return found }
+        guard Prompt.confirm(
+            title: "Install netcoredbg?",
+            message: "Debugging .NET code needs netcoredbg, Samsung's open-source debugger (MIT). "
+                + "Download it from github.com/Samsung/netcoredbg into Application Support?",
+            confirm: "Download") else { return nil }
+        output = "Downloading netcoredbg from \(Netcoredbg.downloadURL.absoluteString)…\n"
+        bottomTab = .output
+        do {
+            let url = try await Netcoredbg.install()
+            appendOutput("Installed \(url.path)\n")
+            return url
+        } catch {
+            appendOutput("netcoredbg install failed: \(error.localizedDescription)\n"
+                + "Install it manually and set its path in Settings ▸ .NET Tools.\n")
+            return nil
+        }
+    }
+
+    /// Runs dotnet to completion, optionally echoing its output into the Output panel.
+    private func dotnetCapture(_ arguments: [String], echo: Bool = false) async -> (status: Int32, output: String) {
+        guard let rootURL, let dotnet = ToolLocator.find("dotnet") else { return (-1, "") }
+        let process = Process()
+        process.executableURL = dotnet
+        process.arguments = arguments
+        process.currentDirectoryURL = rootURL
+        process.environment = ToolLocator.environment()
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        return await withCheckedContinuation { continuation in
+            let collected = CapturedOutput()
+            pipe.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                if data.isEmpty { handle.readabilityHandler = nil; return }
+                let text = String(decoding: data, as: UTF8.self)
+                collected.append(text)
+                if echo { Task { @MainActor in self.appendOutput(text) } }
+            }
+            process.terminationHandler = { proc in
+                // Give the last chunk a moment to arrive.
+                DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) {
+                    continuation.resume(returning: (proc.terminationStatus, collected.text))
+                }
+            }
+            do { try process.run() } catch { continuation.resume(returning: (-1, error.localizedDescription)) }
+        }
+    }
+
+    private func launchDebugger(title: String, adapter: URL, directory: URL, request: String, arguments: JSONValue) {
+        if let session = debugSession, session.isActive { return }
         let session = DebugSession(title: title)
         session.onLocation = { [weak self] location in
             guard let self else { return }
@@ -2021,14 +2122,15 @@ final class Workspace {
         }
         session.onOutput = { [weak self] text in self?.appendOutput(text) }
         debugSession = session
-        output = "Debugging \(title)…\n"
         bottomTab = .debug
         let specs = Dictionary(uniqueKeysWithValues: breakpoints.keys.map { ($0, breakpointSpec($0)) })
-        Task { await session.start(dlv: dlv, directory: directory, launch: launch, breakpoints: specs) }
+        Task { await session.start(adapter: adapter, directory: directory, request: request,
+                                   arguments: arguments, breakpoints: specs) }
     }
 
     func stopDebugging() {
         debugSession?.stop()
+        runProcess?.interrupt()  // the `dotnet test` host of a debugged test
         executionLocation = nil
     }
 
@@ -2133,6 +2235,22 @@ final class Workspace {
         let files = nodes.filter { !$0.isDirectory }
         return (files.first { $0.name == "Program.cs" } ?? files.first { $0.url.pathExtension == "cs" })?.url
     }
+}
+
+/// Thread-safe text accumulator for a child process's output.
+final class CapturedOutput: @unchecked Sendable {
+    private let lock = NSLock()
+    private var buffer = ""
+    func append(_ text: String) { lock.withLock { buffer += text } }
+    var text: String { lock.withLock { buffer } }
+}
+
+/// Lets exactly one caller through (attach to the test host once).
+final class AttachOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var done = false
+    func claim() -> Bool { lock.withLock { defer { done = true }; return !done } }
+    var claimed: Bool { lock.withLock { done } }
 }
 
 /// Splits a byte stream into lines across reads (used off the main thread).

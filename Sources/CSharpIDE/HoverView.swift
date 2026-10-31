@@ -1,7 +1,7 @@
 import CSharpIDECore
 import SwiftUI
 
-/// Renders csharp-ls hover markdown: Go signatures in monospace, docs as inline markdown.
+/// Renders csharp-ls hover markdown: C# signatures in monospace, docs as inline markdown.
 struct HoverView: View {
     let markdown: String
 

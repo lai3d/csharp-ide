@@ -28,7 +28,7 @@ struct EditorServices {
     var caretMoved: @MainActor (Int) -> Void
 }
 
-/// An NSTextView-based code editor with Go highlighting, diagnostics,
+/// An NSTextView-based code editor with C# highlighting, diagnostics,
 /// completion (type or Esc), hover info, and ⌘-click go-to-definition.
 struct CodeEditorView: NSViewRepresentable {
     var text: String
@@ -1045,7 +1045,7 @@ struct CodeEditorView: NSViewRepresentable {
                 // While paused in the debugger, show the value first, then the docs.
                 async let docs = self.parent.services.hover(index)
                 let value: String? = if let expression { await self.parent.services.evaluate(expression) } else { nil }
-                let markdown = [value.map { "```go\n\(expression ?? "") = \($0)\n```" }, await docs]
+                let markdown = [value.map { "```csharp\n\(expression ?? "") = \($0)\n```" }, await docs]
                     .compactMap { $0 }.joined(separator: "\n\n---\n\n")
                 guard !Task.isCancelled, self.hoverWord == word, !markdown.isEmpty else { return }
                 self.showHover(markdown, for: word)

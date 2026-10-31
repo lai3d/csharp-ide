@@ -45,7 +45,7 @@ struct ContentView: View {
                 Button { workspace.startDebugging() } label: {
                     Label("Debug", systemImage: "ladybug")
                 }
-                .help("Debug with Delve (⌥⌘R)")
+                .help("Debug with netcoredbg (⌥⌘R)")
                 .disabled(workspace.isDebugging)
                 Button { workspace.stopRun() } label: {
                     Label("Stop", systemImage: "stop.fill")
@@ -72,7 +72,7 @@ struct WelcomeView: View {
                 .font(.system(size: 48))
                 .foregroundStyle(.secondary)
             Text("CSharpIDE").font(.largeTitle.bold())
-            Text("Open a Go module folder to get started.")
+            Text("Open a folder with a .sln or .csproj to get started.")
                 .foregroundStyle(.secondary)
             Button("Open Folder…") { workspace.presentOpenPanel() }
                 .keyboardShortcut("o")
@@ -193,7 +193,7 @@ struct FileTreeView: View {
 
     private func newFile(in folder: URL) {
         guard let name = Prompt.text(title: "New File", message: "In \(folder.lastPathComponent)",
-                                     initial: "untitled.go", confirm: "Create") else { return }
+                                     initial: "Untitled.cs", confirm: "Create") else { return }
         Prompt.attempt { try workspace.createFile(named: name, in: folder) }
     }
 
@@ -231,7 +231,7 @@ struct FileTreeView: View {
     private static func icon(for node: FileNode) -> String {
         if node.isDirectory { return "folder" }
         switch node.url.pathExtension {
-        case "go": return "doc.text"
+        case "cs": return "doc.text"
         case "mod", "sum": return "shippingbox"
         case "md": return "doc.richtext"
         default: return "doc"
