@@ -49,16 +49,17 @@ public enum EditorConfig {
         -> [String: String] {
         // Collect nearest-first, then apply farthest-first so nearer files override.
         var chain: [(dir: String, file: File)] = []
-        var dir = file.deletingLastPathComponent()
-        while true {
-            if let text = read(dir.appendingPathComponent(".editorconfig")) {
+        // String paths: URL("/").deletingLastPathComponent() is "/.." on some Foundation versions,
+        // which would walk upward forever.
+        var dir = (file.path as NSString).deletingLastPathComponent
+        while !dir.isEmpty {
+            if let text = read(URL(fileURLWithPath: (dir as NSString).appendingPathComponent(".editorconfig"))) {
                 let parsed = parse(text)
-                chain.append((dir.path, parsed))
+                chain.append((dir, parsed))
                 if parsed.isRoot { break }
             }
-            let parent = dir.deletingLastPathComponent()
-            if parent.path == dir.path { break }
-            dir = parent
+            if dir == "/" { break }
+            dir = (dir as NSString).deletingLastPathComponent
         }
         var result: [String: String] = [:]
         for (dirPath, config) in chain.reversed() {
