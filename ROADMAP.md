@@ -27,7 +27,7 @@ Toolchain on the dev Mac: .NET 10 SDK in `~/.dotnet` (dotnet-install.sh, no sudo
 | 1.4 | ✅ Tests | `dotnet test` with console + TRX loggers: live ✓ / ✗ while running, exact outcomes / messages / stack traces from TRX; xUnit / NUnit / MSTest methods found in source → gutter ▶ / ✓ / ✗, run at caret (`--filter FullyQualifiedName=`), project, all; theory rows listed separately | 0.8h |
 | 1.5 | 🚧 Debugger (netcoredbg DAP) | DAP over stdio; build → `msbuild -getProperty:TargetPath` → `dotnet <dll>` under netcoredbg; debug test at caret via `VSTEST_HOST_DEBUG` + attach; one-click download of netcoredbg 3.2.0 (osx-arm64) into Application Support. **Needs an end-to-end run against netcoredbg** | 1–1.5h |
 | 1.6 | ✅ Run configurations | One per runnable project (Exe / Web / Worker SDK, test projects excluded); project, Debug/Release, `launchSettings.json` profile, args, env → `dotnet run --project … -- …` | 0.5h |
-| 1.7 | ⬜ Snippets & settings | C# snippets (`prop`, `ctor`, `class`, `foreach`, …); dotnet / csharp-ls / netcoredbg path overrides | 0.4h |
+| 1.7 | ✅ Snippets & settings | 31 C# snippets (`prop`, `propg`, `ctor`, `foreach`, `try`, `fact`, `theory`, …) replacing csharp-ls's unexpandable snippet stubs; completions ranked exact → prefix → CamelCase humps → fuzzy; indent with spaces (Tab, Return, ⌘], snippets, formatting); dotnet / csharp-ls / netcoredbg path overrides | 0.4h |
 | 1.8 | ⬜ CI & release | .NET in GitHub Actions, tagged `CSharpIDE-vX.Y.Z.zip`, app icon, IDE Toolbox catalog entry | 0.5h |
 
 ## Phase 2 — .NET-specific features

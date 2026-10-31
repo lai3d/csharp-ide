@@ -231,8 +231,9 @@ struct FileTreeView: View {
     private static func icon(for node: FileNode) -> String {
         if node.isDirectory { return "folder" }
         switch node.url.pathExtension {
-        case "cs": return "doc.text"
-        case "mod", "sum": return "shippingbox"
+        case "cs", "csx": return "doc.text"
+        case "csproj", "fsproj", "vbproj", "sln", "slnx", "props", "targets": return "shippingbox"
+        case "json": return "curlybraces"
         case "md": return "doc.richtext"
         default: return "doc"
         }
@@ -303,6 +304,7 @@ struct DocumentEditor: View {
     @Environment(Workspace.self) private var workspace
     @AppStorage(EditorSettings.fontSizeKey) private var fontSize = 13.0
     @AppStorage(EditorSettings.tabWidthKey) private var tabWidth = 4
+    @AppStorage(EditorSettings.insertSpacesKey) private var insertSpaces = true
     @AppStorage("inlayHints") private var showInlayHints = true
     @AppStorage("inlineBlame") private var showBlame = true
     let document: Document
@@ -320,7 +322,7 @@ struct DocumentEditor: View {
             coverageLines: workspace.coverageLines(for: document),
             isEditable: !document.isReadOnly,
             isActive: isActive,
-            settings: EditorSettings(fontSize: fontSize, tabWidth: tabWidth),
+            settings: EditorSettings(fontSize: fontSize, tabWidth: tabWidth, insertSpaces: insertSpaces),
             showInlayHints: showInlayHints,
             languageServerEpoch: workspace.languageServerEpoch,
             gitBase: workspace.gitBase(for: document),

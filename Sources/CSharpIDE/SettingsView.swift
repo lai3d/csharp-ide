@@ -18,6 +18,7 @@ struct SettingsView: View {
 private struct EditorSettingsTab: View {
     @AppStorage(EditorSettings.fontSizeKey) private var fontSize = 13.0
     @AppStorage(EditorSettings.tabWidthKey) private var tabWidth = 4
+    @AppStorage(EditorSettings.insertSpacesKey) private var insertSpaces = true
     @AppStorage("formatOnSave") private var formatOnSave = true
     @AppStorage("inlayHints") private var inlayHints = true
     @AppStorage("inlineBlame") private var inlineBlame = true
@@ -36,11 +37,12 @@ private struct EditorSettingsTab: View {
             }
             .pickerStyle(.segmented)
             .frame(width: 280)
-            Toggle("Format and organize imports on save", isOn: $formatOnSave)
+            Toggle("Indent with spaces", isOn: $insertSpaces)
+            Toggle("Format on save (csharp-ls)", isOn: $formatOnSave)
             Toggle("Show inlay hints (parameter names, inferred types)", isOn: $inlayHints)
             Toggle("Show Git blame for the current line", isOn: $inlineBlame)
             Toggle("Reopen the last project at launch", isOn: $reopenLast)
-            Text("func main() {\n\tfmt.Println(\"preview\")\n}")
+            Text("static void Main()\n{\n    Console.WriteLine(\"preview\");\n}")
                 .font(.system(size: fontSize, design: .monospaced))
                 .lineLimit(nil)
                 .fixedSize(horizontal: false, vertical: true)

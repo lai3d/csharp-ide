@@ -30,6 +30,8 @@ import Testing
         #expect(run("a\nb\n", NSRange(location: 0, length: 3), { TextEditing.shiftLines(in: $0, selection: $1, outdent: false) }) == "[\ta\n\tb]\n")
         #expect(run("\ta\n    b\n", NSRange(location: 0, length: 8), { TextEditing.shiftLines(in: $0, selection: $1, outdent: true) }) == "[a\nb]\n")
         #expect(run("\tx\n", NSRange(location: 2, length: 0), { TextEditing.shiftLines(in: $0, selection: $1, outdent: true) }) == "x|\n")
+        #expect(run("a\n  b\n", NSRange(location: 0, length: 5), { TextEditing.shiftLines(in: $0, selection: $1, outdent: false, unit: "    ") }) == "[    a\n      b]\n")
+        #expect(run("      a\n", NSRange(location: 0, length: 0), { TextEditing.shiftLines(in: $0, selection: $1, outdent: true, unit: "    ") }) == "|  a\n")
     }
 
     @Test func duplicatesLines() {

@@ -93,24 +93,41 @@ public struct Snippet: Sendable, Hashable {
     }
 }
 
-/// Built-in Go snippets, offered in completion by trigger word.
-public enum GoSnippets {
+/// Built-in C# snippets, offered in completion by trigger word (Visual Studio's names where they exist).
+/// Bodies indent with `\t`; the editor swaps in the configured indent unit.
+public enum CSharpSnippets {
     public static let all: [(trigger: String, detail: String, body: String)] = [
-        ("iferr", "if err != nil { return … }", "if err != nil {\n\treturn ${1:err}\n}$0"),
-        ("errorf", "fmt.Errorf(\"…: %w\", err)", "fmt.Errorf(\"${1:context}: %w\", ${2:err})$0"),
-        ("fori", "for i := 0; i < n; i++ { … }", "for i := 0; i < ${1:n}; i++ {\n\t$0\n}"),
-        ("forr", "for k, v := range … { … }", "for ${1:_}, ${2:v} := range ${3:items} {\n\t$0\n}"),
-        ("func", "func name(…) … { … }", "func ${1:name}(${2}) ${3}{\n\t$0\n}"),
-        ("meth", "func (r T) Name(…) … { … }", "func (${1:r} ${2:*Receiver}) ${3:Name}(${4}) ${5}{\n\t$0\n}"),
-        ("main", "func main() { … }", "func main() {\n\t$0\n}"),
-        ("test", "func TestName(t *testing.T) { … }", "func Test${1:Name}(t *testing.T) {\n\t$0\n}"),
-        ("tt", "table-driven test", "tests := []struct {\n\tname string\n\t${1:input} ${2:string}\n\twant ${3:string}\n}{\n\t{name: \"${4:case}\"},\n}\nfor _, tt := range tests {\n\tt.Run(tt.name, func(t *testing.T) {\n\t\t$0\n\t})\n}"),
-        ("sw", "switch … { case …: }", "switch ${1:x} {\ncase ${2:value}:\n\t$0\n}"),
-        ("sel", "select { case …: }", "select {\ncase ${1:v} := <-${2:ch}:\n\t$0\n}"),
-        ("gof", "go func() { … }()", "go func() {\n\t$0\n}()"),
-        ("deferf", "defer func() { … }()", "defer func() {\n\t$0\n}()"),
-        ("st", "type Name struct { … }", "type ${1:Name} struct {\n\t$0\n}"),
-        ("if", "interface { … }", "type ${1:Name} interface {\n\t$0\n}"),
+        ("prop", "public T Name { get; set; }", "public ${1:int} ${2:Name} { get; set; }$0"),
+        ("propg", "public T Name { get; private set; }", "public ${1:int} ${2:Name} { get; private set; }$0"),
+        ("propi", "public T Name { get; init; }", "public ${1:int} ${2:Name} { get; init; }$0"),
+        ("propfull", "property with backing field", "private ${1:int} ${2:field};\n\npublic $1 ${3:Name}\n{\n\tget => $2;\n\tset => $2 = value;\n}$0"),
+        ("ctor", "constructor", "public ${1:ClassName}(${2})\n{\n\t$0\n}"),
+        ("class", "class Name { … }", "public class ${1:Name}\n{\n\t$0\n}"),
+        ("record", "record Name(…);", "public record ${1:Name}(${2:string Value});$0"),
+        ("interface", "interface IName { … }", "public interface ${1:IName}\n{\n\t$0\n}"),
+        ("struct", "struct Name { … }", "public struct ${1:Name}\n{\n\t$0\n}"),
+        ("enum", "enum Name { … }", "public enum ${1:Name}\n{\n\t${2:First},\n\t$0\n}"),
+        ("method", "public void Name(…) { … }", "public ${1:void} ${2:Name}(${3})\n{\n\t$0\n}"),
+        ("async", "public async Task Name(…) { … }", "public async Task ${1:Name}Async(${2})\n{\n\t$0\n}"),
+        ("svm", "static void Main(string[] args)", "static void Main(string[] args)\n{\n\t$0\n}"),
+        ("cw", "Console.WriteLine(…);", "Console.WriteLine($1);$0"),
+        ("for", "for (int i = 0; i < n; i++) { … }", "for (int ${1:i} = 0; $1 < ${2:length}; $1++)\n{\n\t$0\n}"),
+        ("forr", "reverse for loop", "for (int ${1:i} = ${2:length} - 1; $1 >= 0; $1--)\n{\n\t$0\n}"),
+        ("foreach", "foreach (var item in items) { … }", "foreach (var ${1:item} in ${2:items})\n{\n\t$0\n}"),
+        ("if", "if (…) { … }", "if (${1:true})\n{\n\t$0\n}"),
+        ("else", "else { … }", "else\n{\n\t$0\n}"),
+        ("while", "while (…) { … }", "while (${1:true})\n{\n\t$0\n}"),
+        ("do", "do { … } while (…);", "do\n{\n\t$0\n} while (${1:true});"),
+        ("switch", "switch (…) { case …: }", "switch (${1:value})\n{\n\tcase ${2:0}:\n\t\t$0\n\t\tbreak;\n\tdefault:\n\t\tbreak;\n}"),
+        ("try", "try { … } catch (Exception) { … }", "try\n{\n\t$1\n}\ncatch (${2:Exception} ${3:ex})\n{\n\t$0\n}"),
+        ("tryf", "try { … } finally { … }", "try\n{\n\t$1\n}\nfinally\n{\n\t$0\n}"),
+        ("using", "using (…) { … }", "using (${1:var resource = ${2:Create()}})\n{\n\t$0\n}"),
+        ("lock", "lock (…) { … }", "lock (${1:this})\n{\n\t$0\n}"),
+        ("fact", "[Fact] test (xUnit)", "[Fact]\npublic void ${1:Name}()\n{\n\t$0\n}"),
+        ("theory", "[Theory] test (xUnit)", "[Theory]\n[InlineData(${2:1})]\npublic void ${1:Name}(${3:int value})\n{\n\t$0\n}"),
+        ("test", "[Test] test (NUnit)", "[Test]\npublic void ${1:Name}()\n{\n\t$0\n}"),
+        ("testm", "[TestMethod] test (MSTest)", "[TestMethod]\npublic void ${1:Name}()\n{\n\t$0\n}"),
+        ("exception", "custom exception class", "public class ${1:My}Exception : Exception\n{\n\tpublic $1Exception() { }\n\tpublic $1Exception(string message) : base(message) { }\n\tpublic $1Exception(string message, Exception inner) : base(message, inner) { }\n}$0"),
     ]
 
     /// Completion items for snippets whose trigger matches `prefix` (fuzzy, needs ≥ 2 chars).

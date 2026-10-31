@@ -671,6 +671,11 @@ struct CodeEditorView: NSViewRepresentable {
                 case #selector(NSResponder.scrollPageDown(_:)), #selector(NSResponder.pageDown(_:)):
                     completionPopup.moveSelection(by: CompletionPopup.visibleRows)
                     return true
+                case #selector(NSResponder.insertTab(_:)) where !snippetStops.isEmpty && selectedCompletionIsNoOp(in: textView):
+                    // Typed the whole word in a snippet placeholder: Tab moves on instead of re-accepting it.
+                    hideCompletions()
+                    moveSnippetStop(by: 1)
+                    return true
                 case #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.insertTab(_:)):
                     if let item = completionPopup.selectedItem { accept(item) }
                     return true
@@ -712,12 +717,20 @@ struct CodeEditorView: NSViewRepresentable {
             case #selector(NSResponder.insertNewline(_:)):
                 autoIndentNewline(in: textView)
                 return true
+            case #selector(NSResponder.insertTab(_:)) where parent.settings.insertSpaces && textView.selectedRange().length == 0:
+                // Spaces up to the next tab stop.
+                let ns = textView.string as NSString
+                let caret = textView.selectedRange().location
+                let column = caret - ns.lineRange(for: NSRange(location: caret, length: 0)).location
+                let width = max(parent.settings.tabWidth, 1)
+                textView.insertText(String(repeating: " ", count: width - column % width), replacementRange: textView.selectedRange())
+                return true
             default:
                 return false
             }
         }
 
-        /// Keep the current line's indentation, and add a tab after `{` / `(`.
+        /// Keep the current line's indentation, and indent one level after `{` / `(`.
         private func autoIndentNewline(in textView: NSTextView) {
             let ns = textView.string as NSString
             let selection = textView.selectedRange()
@@ -726,7 +739,7 @@ struct CodeEditorView: NSViewRepresentable {
                                                     length: selection.location - lineRange.location))
             let indent = String(before.prefix { $0 == "\t" || $0 == " " })
             let trimmed = before.trimmingCharacters(in: .whitespaces)
-            let extra = (trimmed.hasSuffix("{") || trimmed.hasSuffix("(")) ? "\t" : ""
+            let extra = (trimmed.hasSuffix("{") || trimmed.hasSuffix("(")) ? parent.settings.indentUnit : ""
             let next: unichar? = selection.location < ns.length ? ns.character(at: selection.location) : nil
             if !extra.isEmpty, selection.length == 0, next == 0x7D || next == 0x29 {
                 // Between a pair, e.g. {|}: open a block with the closer on its own line.
@@ -765,7 +778,7 @@ struct CodeEditorView: NSViewRepresentable {
                     let before = ns.substring(with: NSRange(location: lineStart, length: range.location - lineStart))
                     if !before.isEmpty, before.allSatisfy({ $0 == "\t" || $0 == " " }) {
                         let outdented = before.hasSuffix("\t") ? String(before.dropLast())
-                                                                : String(before.dropLast(min(4, before.count)))
+                                                                : String(before.dropLast(min(parent.settings.tabWidth, before.count)))
                         let whole = NSRange(location: lineStart, length: range.location - lineStart)
                         isApplyingCommand = true
                         textView.insertText(outdented + "}", replacementRange: whole)
@@ -867,8 +880,8 @@ struct CodeEditorView: NSViewRepresentable {
             let text = textView.string, selection = textView.selectedRange()
             let change: TextChange? = switch action {
             case .toggleComment: TextEditing.toggleComment(in: text, selection: selection)
-            case .indent: TextEditing.shiftLines(in: text, selection: selection, outdent: false)
-            case .outdent: TextEditing.shiftLines(in: text, selection: selection, outdent: true)
+            case .indent: TextEditing.shiftLines(in: text, selection: selection, outdent: false, unit: parent.settings.indentUnit)
+            case .outdent: TextEditing.shiftLines(in: text, selection: selection, outdent: true, unit: parent.settings.indentUnit)
             case .duplicateLines: TextEditing.duplicateLines(in: text, selection: selection)
             case .moveLinesUp: TextEditing.moveLines(in: text, selection: selection, up: true)
             case .moveLinesDown: TextEditing.moveLines(in: text, selection: selection, up: false)
@@ -912,7 +925,7 @@ struct CodeEditorView: NSViewRepresentable {
                 completionPopup.hide()  // typing a number
                 return
             }
-            let matches = completionItems.filter { FuzzyMatch.matches(prefix, $0.filterText) }
+            let matches = FuzzyMatch.filterAndRank(completionItems, pattern: prefix)
             if matches.isEmpty || (matches.count == 1 && matches[0].insertText == prefix) {
                 completionPopup.hide()
                 return
@@ -920,6 +933,15 @@ struct CodeEditorView: NSViewRepresentable {
             endHover()
             let anchor = textView.firstRect(forCharacterRange: NSRange(location: start, length: 0), actualRange: nil)
             completionPopup.show(matches, below: anchor, in: window)
+        }
+
+        /// Accepting the selected completion would leave the text unchanged.
+        private func selectedCompletionIsNoOp(in textView: NSTextView) -> Bool {
+            guard let item = completionPopup.selectedItem, item.snippet == nil, item.additionalEdits.isEmpty else { return false }
+            let ns = textView.string as NSString
+            let caret = textView.selectedRange().location
+            let start = GoIdentifier.prefixStart(in: ns, before: caret)
+            return ns.substring(with: NSRange(location: start, length: caret - start)) == item.insertText
         }
 
         private func hideCompletions() {
@@ -941,7 +963,8 @@ struct CodeEditorView: NSViewRepresentable {
             // Snippets keep the line's indentation on their following lines.
             let lineStart = ns.lineRange(for: NSRange(location: start, length: 0)).location
             let indent = String(ns.substring(with: NSRange(location: lineStart, length: start - lineStart)).prefix { $0 == "\t" || $0 == " " })
-            let snippet = item.snippet.map { Snippet.parse($0).indented(indent) }
+            let unit = parent.settings.indentUnit
+            let snippet = item.snippet.map { Snippet.parse($0.replacingOccurrences(of: "\t", with: unit)).indented(indent) }
             let insertion = snippet?.text ?? item.insertText
             textView.undoManager?.beginUndoGrouping()
             textView.insertText(insertion, replacementRange: NSRange(location: start, length: caret - start))

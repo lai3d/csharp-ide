@@ -887,7 +887,10 @@ final class Workspace {
         version = document.version
         guard let result = try? await lsp.request("textDocument/formatting", params: [
             "textDocument": ["uri": uri],
-            "options": ["tabSize": 4, "insertSpaces": true],
+            "options": [
+                "tabSize": .int(UserDefaults.standard.object(forKey: "editorTabWidth") as? Int ?? 4),
+                "insertSpaces": .bool(UserDefaults.standard.object(forKey: "editorInsertSpaces") as? Bool ?? true),
+            ],
         ]), document.version == version else { return }  // edited meanwhile: skip
         let edits = result.arrayValue?.compactMap(TextEdit.parse) ?? []
         replaceText(of: document, with: TextEdit.apply(edits, to: document.text))
@@ -948,11 +951,14 @@ final class Workspace {
         let start = GoIdentifier.prefixStart(in: ns, before: offset)
         let prefix = ns.substring(with: NSRange(location: start, length: offset - start))
         let afterDot = start > 0 && ns.character(at: start - 1) == 0x2E
-        let snippets = document.isCSharp && !afterDot ? GoSnippets.completions(matching: prefix) : []
+        let snippets = document.isCSharp && !afterDot ? CSharpSnippets.completions(matching: prefix) : []
         guard case let (lsp, params)? = positionRequest(document, at: offset),
               let result = try? await lsp.request("textDocument/completion", params: params)
         else { return snippets }
-        return CompletionItem.parseList(result) + snippets
+        // csharp-ls lists Roslyn's snippet names (prop, ctor, …) but can't expand them: ours win.
+        let ours = Set(CSharpSnippets.all.map(\.trigger))
+        let server = CompletionItem.parseList(result).filter { !($0.insertText == $0.label && ours.contains($0.label)) }
+        return snippets + server
     }
 
     func hover(in document: Document, at offset: Int) async -> String? {

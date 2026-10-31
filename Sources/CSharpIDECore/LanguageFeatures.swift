@@ -125,6 +125,29 @@ public enum FuzzyMatch {
         }
         return true
     }
+
+    /// Match quality for ordering (lower is better): exact, prefix, case-insensitive prefix,
+    /// word-boundary (CamelCase humps: "SB" → StringBuilder), then any subsequence.
+    public static func rank(_ pattern: String, _ candidate: String) -> Int {
+        if pattern.isEmpty { return 0 }
+        if candidate == pattern { return 0 }
+        if candidate.hasPrefix(pattern) { return 1 }
+        if candidate.lowercased().hasPrefix(pattern.lowercased()) { return 2 }
+        let humps = String(candidate.enumerated().filter { i, c in i == 0 || c.isUppercase }.map(\.element))
+        if humps.lowercased().hasPrefix(pattern.lowercased()) { return 3 }
+        return 4
+    }
+
+    /// `items` that match `pattern`, best first (stable within a rank, so server order breaks ties).
+    public static func filterAndRank(_ items: [CompletionItem], pattern: String) -> [CompletionItem] {
+        items.enumerated()
+            .filter { matches(pattern, $0.element.filterText) }
+            .sorted { a, b in
+                let ra = rank(pattern, a.element.filterText), rb = rank(pattern, b.element.filterText)
+                return ra != rb ? ra < rb : a.offset < b.offset
+            }
+            .map(\.element)
+    }
 }
 
 // MARK: - Hover

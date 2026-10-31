@@ -5,9 +5,15 @@ import CSharpIDECore
 struct EditorSettings: Equatable {
     static let fontSizeKey = "editorFontSize"
     static let tabWidthKey = "editorTabWidth"
+    static let insertSpacesKey = "editorInsertSpaces"
 
     var fontSize: Double = 13
     var tabWidth: Int = 4
+    /// C# convention: indent with spaces (Tab, Return, ⌘], snippets).
+    var insertSpaces = true
+
+    /// One level of indentation.
+    var indentUnit: String { insertSpaces ? String(repeating: " ", count: tabWidth) : "\t" }
 }
 
 @MainActor
@@ -20,7 +26,7 @@ enum EditorTheme {
         let style = NSMutableParagraphStyle()
         let spaceWidth = (" " as NSString).size(withAttributes: [.font: font(settings)]).width
         style.tabStops = []
-        style.defaultTabInterval = spaceWidth * CGFloat(settings.tabWidth)  // gofmt uses tabs
+        style.defaultTabInterval = spaceWidth * CGFloat(settings.tabWidth)  // for files that do use tabs
         return style
     }
 

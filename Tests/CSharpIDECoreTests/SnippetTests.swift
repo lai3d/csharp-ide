@@ -29,9 +29,12 @@ import Testing
     }
 
     @Test func builtInSnippetsMatchTriggers() {
-        #expect(GoSnippets.completions(matching: "iferr").map(\.label) == ["iferr"])
-        #expect(GoSnippets.completions(matching: "fo").map(\.label).contains("fori"))
-        #expect(GoSnippets.completions(matching: "x").isEmpty)
-        #expect(GoSnippets.all.allSatisfy { !Snippet.parse($0.body).stops.isEmpty })
+        #expect(CSharpSnippets.completions(matching: "propg").map(\.label) == ["propg"])
+        #expect(CSharpSnippets.completions(matching: "fo").map(\.label).contains("foreach"))
+        #expect(CSharpSnippets.completions(matching: "x").isEmpty)
+        let ctor = Snippet.parse(CSharpSnippets.all.first { $0.trigger == "ctor" }!.body)
+        #expect(ctor.text == "public ClassName()\n{\n\t\n}")
+        #expect(Set(CSharpSnippets.all.map(\.trigger)).count == CSharpSnippets.all.count)  // unique triggers
+        #expect(CSharpSnippets.all.allSatisfy { !Snippet.parse($0.body).stops.isEmpty })
     }
 }

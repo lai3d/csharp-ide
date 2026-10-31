@@ -37,6 +37,14 @@ import Testing
         #expect(item?.insertText == "x()" && item?.snippet == "x($1)")
     }
 
+    @Test func ranksExactAndPrefixMatchesFirst() {
+        let items = ["ParallelLoopResult", "propfull", "PropertyInfo", "prop", "StringBuilder", "SByte"].map {
+            CompletionItem(label: $0)
+        }
+        #expect(FuzzyMatch.filterAndRank(items, pattern: "prop").map(\.label) == ["prop", "propfull", "PropertyInfo", "ParallelLoopResult"])
+        #expect(FuzzyMatch.filterAndRank(items, pattern: "SB").map(\.label) == ["SByte", "StringBuilder"])
+    }
+
     @Test func fuzzyMatches() {
         #expect(FuzzyMatch.matches("", "anything"))
         #expect(FuzzyMatch.matches("prl", "Println"))
