@@ -870,7 +870,7 @@ final class Workspace {
     /// Organizes usings (when the server offers it), then formats with csharp-ls (Roslyn formatter).
     func format(_ document: Document) async {
         guard lspReady, document.isCSharp, !document.isReadOnly, let lsp else { return }
-        let uri = JSONValue.string(document.url.absoluteString)
+        let uri = JSONValue.string(lspURI(document))
 
         var version = document.version
         if let result = try? await lsp.request("textDocument/codeAction", params: [
@@ -930,7 +930,7 @@ final class Workspace {
             refreshGit()
             if lspReady, document.isCSharp {
                 try? lsp?.notify("textDocument/didSave", params: [
-                    "textDocument": ["uri": .string(document.url.absoluteString)],
+                    "textDocument": ["uri": .string(lspURI(document))],
                 ])
             }
         } catch {
@@ -972,7 +972,7 @@ final class Workspace {
     func semanticTokens(in document: Document) async -> [SemanticToken] {
         guard lspReady, document.isCSharp, let lsp, let legend = semanticLegend,
               let result = try? await lsp.request("textDocument/semanticTokens/full", params: [
-                  "textDocument": ["uri": .string(document.url.absoluteString)],
+                  "textDocument": ["uri": .string(lspURI(document))],
               ])
         else { return [] }
         return legend.decode(result)
@@ -981,7 +981,7 @@ final class Workspace {
     func foldingRanges(in document: Document) async -> [FoldRegion] {
         guard lspReady, document.isCSharp, let lsp,
               let result = try? await lsp.request("textDocument/foldingRange", params: [
-                  "textDocument": ["uri": .string(document.url.absoluteString)],
+                  "textDocument": ["uri": .string(lspURI(document))],
               ])
         else { return [] }
         return FoldRegion.parseAll(result)
@@ -992,7 +992,7 @@ final class Workspace {
         guard lspReady, document.isCSharp, let lsp else { return [] }
         let lines = LineIndex(document.text).lineCount
         guard let result = try? await lsp.request("textDocument/inlayHint", params: [
-            "textDocument": ["uri": .string(document.url.absoluteString)],
+            "textDocument": ["uri": .string(lspURI(document))],
             "range": ["start": TextPosition(line: 0, character: 0).json, "end": TextPosition(line: lines, character: 0).json],
         ]) else { return [] }
         return InlayHint.parseAll(result)
@@ -1033,9 +1033,11 @@ final class Workspace {
             flashStatus("No \(what) found for ‘\(symbol)’")
             return
         }
-        if locations.count == 1, let target = URL(string: locations[0].uri), target.isFileURL {
+        // One location, or several in one decompiled file (overloads): jump straight there.
+        if Set(locations.map(\.uri)).count == 1 || locations.allSatisfy({ URL(string: $0.uri)?.isFileURL != true }),
+           let target = await localURL(forLSPURI: locations[0].uri) {
             backStack.append(NavigationPoint(url: document.url, position: LineIndex(document.text).position(of: offset)))
-            navigate(to: URL(fileURLWithPath: target.path), position: locations[0].start)
+            navigate(to: target, position: locations[0].start)
             return
         }
         showLocations(locations, title: "\(locations.count) \(what)s of ‘\(symbol)’")
@@ -1203,7 +1205,7 @@ final class Workspace {
     func refreshOutline() async {
         guard let document = activeDocument, document.isCSharp, lspReady, let lsp,
               let result = try? await lsp.request("textDocument/documentSymbol", params: [
-                  "textDocument": ["uri": .string(document.url.absoluteString)],
+                  "textDocument": ["uri": .string(lspURI(document))],
               ]),
               document === activeDocument
         else {
@@ -1234,7 +1236,7 @@ final class Workspace {
             ? (caret, index.position(of: offset + length))
             : related.first.map { ($0.start, $0.end) } ?? (caret, caret)
         guard let result = try? await lsp.request("textDocument/codeAction", params: [
-            "textDocument": ["uri": .string(document.url.absoluteString)],
+            "textDocument": ["uri": .string(lspURI(document))],
             "range": ["start": range.start.json, "end": range.end.json],
             "context": ["diagnostics": .array(related.compactMap(\.raw)), "triggerKind": 1],
         ]) else { return [] }
@@ -1378,14 +1380,65 @@ final class Workspace {
         let origin = LineIndex(document.text).position(of: offset)
         let result = try? await lsp.request("textDocument/definition", params: params)
         guard let location = result.map(Location.parseAll)?.first,
-              let target = URL(string: location.uri), target.isFileURL
+              let target = await localURL(forLSPURI: location.uri)
         else {
             flashStatus("No definition found")
             return
         }
         backStack.append(NavigationPoint(url: document.url, position: origin))
         if backStack.count > 100 { backStack.removeFirst() }
-        navigate(to: URL(fileURLWithPath: target.path), position: location.start)
+        navigate(to: target, position: location.start)
+    }
+
+    // MARK: - Decompiled sources (csharp:/ metadata URIs)
+
+    /// Local copies of decompiled / source-generated documents, by their `csharp:/` URI.
+    @ObservationIgnored private var metadataFiles: [String: URL] = [:]
+    @ObservationIgnored private var metadataURIs: [String: String] = [:]  // local path → csharp:/ URI
+
+    static var metadataCacheDirectory: URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("CSharpIDE/metadata", isDirectory: true)
+    }
+
+    /// A file URL for a location: as is for `file:`, else (csharp:/) the decompiled source fetched
+    /// with `csharp/metadata` and cached on disk, opened read-only.
+    func localURL(forLSPURI uri: String) async -> URL? {
+        guard let url = URL(string: uri) else { return nil }
+        if url.isFileURL { return URL(fileURLWithPath: url.path) }
+        guard url.scheme == "csharp" else { return nil }
+        if let cached = metadataFiles[uri] { return cached }
+        guard lspReady, let lsp,
+              let result = try? await lsp.request("csharp/metadata", params: ["textDocument": ["uri": .string(uri)]]),
+              let source = result["source"]?.stringValue else { return nil }
+        let assembly = result["assemblyName"]?.stringValue ?? "Metadata"
+        let name = (url.lastPathComponent as NSString).deletingPathExtension
+        let file = Self.metadataCacheDirectory
+            .appendingPathComponent(Self.safeFileName(assembly), isDirectory: true)
+            .appendingPathComponent(Self.safeFileName(name) + ".cs")
+        do {
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try source.write(to: file, atomically: true, encoding: .utf8)
+        } catch {
+            return nil
+        }
+        let local = file.canonicalFileURL
+        metadataFiles[uri] = local
+        metadataURIs[Self.key(for: local)] = uri
+        return local
+    }
+
+    /// The URI the language server knows a document by (its csharp:/ URI for decompiled sources).
+    func lspURI(_ document: Document) -> String {
+        metadataURIs[Self.key(for: document.url)] ?? document.url.absoluteString
+    }
+
+    func isMetadataDocument(_ document: Document) -> Bool {
+        metadataURIs[Self.key(for: document.url)] != nil
+    }
+
+    private static func safeFileName(_ name: String) -> String {
+        String(name.map { $0.isLetter || $0.isNumber || ".-_".contains($0) ? $0 : "_" })
     }
 
     func goBack() {
@@ -1513,7 +1566,7 @@ final class Workspace {
     private func positionRequest(_ document: Document, at offset: Int) -> (LSPClient, JSONValue)? {
         guard lspReady, document.isCSharp, let lsp else { return nil }
         let position = LineIndex(document.text).position(of: offset)
-        return (lsp, ["textDocument": ["uri": .string(document.url.absoluteString)], "position": position.json])
+        return (lsp, ["textDocument": ["uri": .string(lspURI(document))], "position": position.json])
     }
 
     private func flashStatus(_ message: String) {
@@ -1587,7 +1640,9 @@ final class Workspace {
         guard lsp === client else { return }
         switch method {
         case "textDocument/publishDiagnostics":
-            guard let published = Diagnostic.parsePublish(params), let url = URL(string: published.uri) else { return }
+            // Decompiled sources (csharp:/) aren't ours to fix: no Problems for them.
+            guard let published = Diagnostic.parsePublish(params), let url = URL(string: published.uri), url.isFileURL
+            else { return }
             let key = Self.key(for: url)
             if published.diagnostics.isEmpty {
                 diagnostics.removeValue(forKey: key)
@@ -1605,7 +1660,7 @@ final class Workspace {
         guard lspReady, document.isCSharp else { return }
         try? lsp?.notify("textDocument/didOpen", params: [
             "textDocument": [
-                "uri": .string(document.url.absoluteString),
+                "uri": .string(lspURI(document)),
                 "languageId": "csharp",
                 "version": .int(document.version),
                 "text": .string(document.text),
@@ -1616,7 +1671,7 @@ final class Workspace {
     private func sendDidChange(_ document: Document) {
         guard lspReady, document.isCSharp else { return }
         try? lsp?.notify("textDocument/didChange", params: [
-            "textDocument": ["uri": .string(document.url.absoluteString), "version": .int(document.version)],
+            "textDocument": ["uri": .string(lspURI(document)), "version": .int(document.version)],
             "contentChanges": [["text": .string(document.text)]],
         ])
     }
@@ -1624,7 +1679,7 @@ final class Workspace {
     private func sendDidClose(_ document: Document) {
         guard lspReady, document.isCSharp else { return }
         try? lsp?.notify("textDocument/didClose", params: [
-            "textDocument": ["uri": .string(document.url.absoluteString)],
+            "textDocument": ["uri": .string(lspURI(document))],
         ])
     }
 
@@ -1687,6 +1742,8 @@ final class Workspace {
                 "workspace": workspace,
                 "general": ["positionEncodings": ["utf-16"]],
                 "window": ["showDocument": ["support": true]],
+                // Definitions into compiled assemblies come back as csharp:/ URIs (see localURL(forLSPURI:)).
+                "experimental": ["csharp": ["metadataUris": true]],
             ],
         ]
     }

@@ -385,3 +385,38 @@ import CSharpIDECore
         #expect(workspace.testStatuses["Adds"] == .passed)
     }
 }
+
+@MainActor
+@Suite struct WorkspaceMetadataTests {
+    @Test(.enabled(if: ToolLocator.find("csharp-ls") != nil), .timeLimit(.minutes(2)))
+    func definitionIntoTheBCLOpensDecompiledSource() async throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("csharpide-meta-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let dir = base.canonicalFileURL
+        try """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+            </Project>
+            """.write(to: dir.appendingPathComponent("App.csproj"), atomically: true, encoding: .utf8)
+        try "System.Console.WriteLine(\"hi\");\n".write(to: dir.appendingPathComponent("Program.cs"), atomically: true, encoding: .utf8)
+
+        let workspace = Workspace()
+        await workspace.openFolder(dir)
+        let program = try #require(workspace.activeDocument)
+        let offset = ("System.Console.WriteLine(\"hi\");" as NSString).range(of: "WriteLine").location + 2
+        // The project loads in the background: retry until the definition resolves.
+        for _ in 0..<60 {
+            await workspace.jumpToDefinition(from: program, at: offset)
+            if workspace.activeDocument !== program { break }
+            try await Task.sleep(for: .milliseconds(500))
+        }
+        let decompiled = try #require(workspace.activeDocument)
+        #expect(decompiled !== program)
+        #expect(decompiled.url.path.hasPrefix(Workspace.metadataCacheDirectory.canonicalFileURL.path))
+        #expect(decompiled.isReadOnly && workspace.isMetadataDocument(decompiled))
+        #expect(decompiled.text.contains("public static class Console"))
+        #expect(workspace.lspURI(decompiled).hasPrefix("csharp:/"))
+        #expect(workspace.diagnostics[Workspace.key(for: decompiled.url)] == nil)
+    }
+}

@@ -28,7 +28,7 @@ Toolchain on the dev Mac: .NET 10 SDK in `~/.dotnet` (dotnet-install.sh, no sudo
 | 1.5 | 🚧 Debugger (netcoredbg DAP) | DAP over stdio; build → `msbuild -getProperty:TargetPath` → `dotnet <dll>` under netcoredbg; debug test at caret via `VSTEST_HOST_DEBUG` + attach; one-click download of netcoredbg 3.2.0 (osx-arm64) into Application Support. **Needs an end-to-end run against netcoredbg** | 1–1.5h |
 | 1.6 | ✅ Run configurations | One per runnable project (Exe / Web / Worker SDK, test projects excluded); project, Debug/Release, `launchSettings.json` profile, args, env → `dotnet run --project … -- …` | 0.5h |
 | 1.7 | ✅ Snippets & settings | 31 C# snippets (`prop`, `propg`, `ctor`, `foreach`, `try`, `fact`, `theory`, …) replacing csharp-ls's unexpandable snippet stubs; completions ranked exact → prefix → CamelCase humps → fuzzy; indent with spaces (Tab, Return, ⌘], snippets, formatting); dotnet / csharp-ls / netcoredbg path overrides | 0.4h |
-| 1.8 | ⬜ CI & release | .NET in GitHub Actions, tagged `CSharpIDE-vX.Y.Z.zip`, app icon, IDE Toolbox catalog entry | 0.5h |
+| 1.8 | ✅ CI & release | CI installs .NET 10 + csharp-ls and runs the end-to-end tests; `v*` tags publish `CSharpIDE-vX.Y.Z.zip`; purple C# icon; IDE Toolbox catalog PR (lai3d/ide-toolbox#4) | 0.5h |
 
 ## Phase 2 — .NET-specific features
 
@@ -37,7 +37,7 @@ Toolchain on the dev Mac: .NET 10 SDK in `~/.dotnet` (dotnet-install.sh, no sudo
 | 2.1 | ⬜ Solution explorer | Projects / dependencies / NuGet packages from the `.sln` + `.csproj` | 0.6h |
 | 2.2 | ⬜ NuGet | Search / add / update packages (`dotnet add package`, `dotnet list package --outdated`) | 0.6h |
 | 2.3 | ⬜ Format | `dotnet format` / LSP formatting on save, `.editorconfig` respected | 0.3h |
-| 2.4 | ⬜ Decompiled sources | Go to definition into metadata (csharp-ls `csharp/metadata`) in a read-only tab | 0.4h |
+| 2.4 | ✅ Decompiled sources | Go to definition into compiled assemblies: csharp-ls `metadataUris` → `csharp/metadata` → cached read-only tab (hover / definition keep working inside it via its csharp:/ URI) | 0.4h |
 | 2.5 | ⬜ Coverage | `dotnet test --collect "XPlat Code Coverage"` (coverlet cobertura) | 0.5h |
 | 2.6 | ⬜ Roslyn LSP option | Optional Microsoft.CodeAnalysis.LanguageServer backend for richer analyzers | 1h |
 
