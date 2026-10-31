@@ -31,23 +31,26 @@ enum EditorTheme {
     /// Colors for what only csharp-ls knows (the regex lexer handles keywords, strings, …).
     static func color(forSemantic type: String, modifiers: Set<String>) -> NSColor? {
         switch type {
-        case "namespace": .secondaryLabelColor  // package qualifiers: fmt.Println
-        case "type", "typeParameter", "struct", "interface", "class", "enum": .systemTeal
+        case "namespace": .secondaryLabelColor
+        case "class", "struct", "interface", "enum", "typeParameter", "delegate", "recordClass",
+             "recordStruct", "type": .systemTeal
         case "parameter": .systemBrown
-        case "function" where modifiers.contains("defaultLibrary"): .systemPurple  // len, append, …
-        case "function", "method": .systemBlue
-        case "variable" where modifiers.contains("defaultLibrary"): .systemPurple  // nil, true, false
-        case "variable" where modifiers.contains("readonly"), "enumMember": .systemIndigo  // constants
+        case "method", "extensionMethod", "function": .systemBlue
+        case "property", "field", "event": .systemPurple
+        case "constant", "enumMember": .systemIndigo
+        case "stringEscapeCharacter": .systemRed
         default: nil
         }
     }
 
     // System colors adapt to light and dark mode automatically.
-    static func color(for kind: GoTokenKind) -> NSColor {
+    static func color(for kind: SyntaxKind) -> NSColor {
         switch kind {
         case .keyword: .systemPink
-        case .type: .systemTeal
-        case .builtin: .systemPurple
+        case .type: .systemPink  // int, string, void: keywords in C#
+        case .builtin: .systemPink
+        case .preprocessor: .systemGray
+        case .attribute: .systemTeal
         case .function: .systemBlue
         case .string: .systemOrange
         case .number: .systemIndigo

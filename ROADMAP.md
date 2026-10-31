@@ -22,7 +22,7 @@ Toolchain on the dev Mac: .NET 10 SDK in `~/.dotnet` (dotnet-install.sh, no sudo
 | # | Item | Notes | Est. |
 |---|---|---|---|
 | 1.1 | ✅ Language server | `csharp-ls` over stdio: diagnostics, completion, hover, definition, references, rename, outline, signature help (active parameter inferred client-side), folding, call hierarchy, semantic tokens, inlay hints, formatting; `dotnet` found in `~/.dotnet`, `/usr/local/share/dotnet`, Homebrew, PATH with `DOTNET_ROOT` set; new `.cs` files get namespace + class | 0.6h |
-| 1.2 | ⬜ C# highlighter | Regex lexer: verbatim/interpolated/raw strings, preprocessor, attributes, contextual keywords, XML doc comments | 0.5h |
+| 1.2 | ✅ C# highlighter | Regex lexer: verbatim / interpolated / raw (`"""`, `$$"""`) / UTF-8 strings, chars, number suffixes, preprocessor, attributes, generic calls, contextual keywords, `@ident`; semantic colors for csharp-ls types (properties, constants, escapes) | 0.5h |
 | 1.3 | ⬜ dotnet build / run | Toolbar + .NET menu; parse MSBuild `file(line,col): error CS0000` into Problems | 0.5h |
 | 1.4 | ⬜ Tests | `dotnet test` (xUnit / NUnit / MSTest) with TRX results: gutter ▶ / ✓ / ✗ per `[Fact]`/`[Test]`/`[TestMethod]` | 0.8h |
 | 1.5 | ⬜ Debugger (netcoredbg DAP) | Replace Delve; download netcoredbg on first use (check osx-arm64 build availability), launch built dll | 1–1.5h |

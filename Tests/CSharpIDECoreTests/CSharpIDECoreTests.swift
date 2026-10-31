@@ -52,25 +52,58 @@ import Testing
     }
 }
 
-@Suite struct GoHighlighterTests {
-    private func kinds(_ source: String) -> [(String, GoTokenKind)] {
+@Suite struct CSharpHighlighterTests {
+    private func kinds(_ source: String) -> [(String, SyntaxKind)] {
         let ns = source as NSString
-        return GoHighlighter.tokenize(source).map { (ns.substring(with: $0.range), $0.kind) }
+        return CSharpHighlighter.tokenize(source).map { (ns.substring(with: $0.range), $0.kind) }
     }
 
     @Test func classifiesTokens() {
-        let tokens = kinds(#"func main() { x := len("hi // no") + 42 } // done"#)
-        #expect(tokens.map(\.0) == ["func", "main", "len", #""hi // no""#, "42", "// done"])
-        #expect(tokens.map(\.1) == [.keyword, .function, .builtin, .string, .number, .comment])
+        let tokens = kinds(#"public static int Add(int a) { var s = "hi // no"; return a + 42; } // done"#)
+        #expect(tokens.map(\.0) == ["public", "static", "int", "Add", "int", "var", #""hi // no""#, "return", "42", "// done"])
+        #expect(tokens.map(\.1) == [.keyword, .keyword, .type, .function, .type, .keyword, .string, .keyword, .number, .comment])
     }
 
-    @Test func handlesRawStringsAndTypes() {
-        let tokens = kinds("var s string = `a\n\"b\"`")
-        #expect(tokens.map(\.1) == [.keyword, .type, .string])
+    @Test func handlesVerbatimRawAndInterpolatedStrings() {
+        #expect(kinds(#"x = @"C:\dir\""quoted"""; y"#).map(\.1) == [.string])
+        #expect(kinds("s = \"\"\"\n  a \"quote\" \"\" inside\n  \"\"\"; z").map(\.0).first?.hasSuffix("\"\"\"") == true)
+        #expect(kinds("s = $$\"\"\"\"{{x}} \"\"\" still\"\"\"\"; t").map(\.1) == [.string])
+        #expect(kinds(#"Log($"{name}: {n}", 'c', '\n')"#).map(\.1) == [.function, .string, .string, .string])
+        #expect(kinds(#"var b = "abc"u8;"#).map(\.0) == ["var", #""abc"u8"#])
+    }
+
+    @Test func numbersWithSuffixesAndSeparators() {
+        #expect(kinds("1_000 0xFF_FFu 0b1010 3.14f 2.5m 1e-3 10UL .5d").allSatisfy { $0.1 == .number })
+        #expect(kinds("1_000 0xFF_FFu 0b1010 3.14f 2.5m 1e-3 10UL .5d").count == 8)
+    }
+
+    @Test func preprocessorAttributesAndGenerics() {
+        let source = """
+            #region Setup
+            [Fact, Trait("a", "b")]
+            [assembly: InternalsVisibleTo("Tests")]
+            public void Run<T>(T value) => items[Index] = Make<int>();
+            #endregion
+            """
+        let tokens = kinds(source)
+        #expect(tokens.contains { $0 == ("#region Setup", .preprocessor) })
+        #expect(tokens.contains { $0 == ("Fact", .attribute) })
+        #expect(tokens.contains { $0 == ("Trait", .attribute) })
+        #expect(tokens.contains { $0 == ("InternalsVisibleTo", .attribute) })
+        #expect(tokens.contains { $0 == ("Run", .function) })
+        #expect(tokens.contains { $0 == ("Make", .function) })
+        #expect(!tokens.contains { $0.0 == "Index" })  // an indexer argument, not an attribute
+        #expect(tokens.contains { $0 == ("value", .keyword) })  // contextual keyword everywhere (accepted)
+        #expect(tokens.last?.1 == .preprocessor)
+    }
+
+    @Test func verbatimIdentifiersAreNotKeywords() {
+        #expect(kinds("var @class = 1;").map(\.0) == ["var", "1"])
     }
 
     @Test func highlightsUnterminatedBlockComment() {
         #expect(kinds("x /* open").last?.1 == .comment)
+        #expect(kinds("/// <summary>Doc</summary>").map(\.1) == [.comment])
     }
 }
 
