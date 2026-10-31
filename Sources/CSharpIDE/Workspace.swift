@@ -443,6 +443,8 @@ final class Workspace {
     func rebuild() { runDotnet(["build", "--no-incremental"] + buildTarget) }
     func clean() { runDotnet(["clean"] + buildTarget) }
     func restore() { runDotnet(["restore"] + buildTarget) }
+    /// Whitespace, style and analyzer fixes across the solution, following .editorconfig.
+    func formatSolution() { runDotnet(["format"] + buildTarget + ["-v", "d"]) }
 
     // MARK: - Session
 
@@ -489,6 +491,10 @@ final class Workspace {
 
     /// Reacts to files changed on disk (by us, an external editor, git, go generate…).
     func handleFileSystemChanges(_ paths: [String]) {
+        if paths.contains(where: { $0.hasSuffix("/.editorconfig") }) {
+            indentationCache = [:]
+            editorConfigEpoch += 1
+        }
         // Commits, checkouts, staging… only touch .git: refresh Git state for those too.
         if paths.contains(where: { $0.contains("/.git/") || $0.hasSuffix("/.git") }) { refreshGit() }
         let relevant = paths.filter { !isIgnored(path: $0) }
@@ -878,6 +884,33 @@ final class Workspace {
 
     // MARK: - Formatting
 
+    // MARK: - .editorconfig
+
+    @ObservationIgnored private var indentationCache: [String: EditorConfig.Indentation] = [:]
+    /// Bumped when an .editorconfig changes so editors pick up new indentation.
+    private(set) var editorConfigEpoch = 0
+
+    /// The user's editor settings with the file's .editorconfig indentation applied.
+    func editorSettings(_ base: EditorSettings, for document: Document) -> EditorSettings {
+        _ = editorConfigEpoch
+        let key = Self.key(for: document.url)
+        let indentation = indentationCache[key] ?? EditorConfig.indentation(for: document.url)
+        indentationCache[key] = indentation
+        var settings = base
+        if let spaces = indentation.insertSpaces { settings.insertSpaces = spaces }
+        if let size = indentation.size { settings.tabWidth = size }
+        return settings
+    }
+
+    /// LSP formatting options: .editorconfig first, then Settings ▸ Editor.
+    private func formattingOptions(for document: Document) -> JSONValue {
+        let defaults = UserDefaults.standard
+        let settings = editorSettings(EditorSettings(
+            tabWidth: defaults.object(forKey: EditorSettings.tabWidthKey) as? Int ?? 4,
+            insertSpaces: defaults.object(forKey: EditorSettings.insertSpacesKey) as? Bool ?? true), for: document)
+        return ["tabSize": .int(settings.tabWidth), "insertSpaces": .bool(settings.insertSpaces)]
+    }
+
     /// Organizes usings (when the server offers it), then formats with csharp-ls (Roslyn formatter).
     func format(_ document: Document) async {
         guard lspReady, document.isCSharp, !document.isReadOnly, let lsp else { return }
@@ -898,10 +931,7 @@ final class Workspace {
         version = document.version
         guard let result = try? await lsp.request("textDocument/formatting", params: [
             "textDocument": ["uri": uri],
-            "options": [
-                "tabSize": .int(UserDefaults.standard.object(forKey: "editorTabWidth") as? Int ?? 4),
-                "insertSpaces": .bool(UserDefaults.standard.object(forKey: "editorInsertSpaces") as? Bool ?? true),
-            ],
+            "options": formattingOptions(for: document),
         ]), document.version == version else { return }  // edited meanwhile: skip
         let edits = result.arrayValue?.compactMap(TextEdit.parse) ?? []
         replaceText(of: document, with: TextEdit.apply(edits, to: document.text))

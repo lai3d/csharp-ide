@@ -322,7 +322,8 @@ struct DocumentEditor: View {
             coverageLines: workspace.coverageLines(for: document),
             isEditable: !document.isReadOnly,
             isActive: isActive,
-            settings: EditorSettings(fontSize: fontSize, tabWidth: tabWidth, insertSpaces: insertSpaces),
+            settings: workspace.editorSettings(
+                EditorSettings(fontSize: fontSize, tabWidth: tabWidth, insertSpaces: insertSpaces), for: document),
             showInlayHints: showInlayHints,
             languageServerEpoch: workspace.languageServerEpoch,
             gitBase: workspace.gitBase(for: document),

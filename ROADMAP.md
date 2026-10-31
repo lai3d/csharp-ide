@@ -36,7 +36,7 @@ Toolchain on the dev Mac: .NET 10 SDK in `~/.dotnet` (dotnet-install.sh, no sudo
 |---|---|---|---|
 | 2.1 | ⬜ Solution explorer | Projects / dependencies / NuGet packages from the `.sln` + `.csproj` | 0.6h |
 | 2.2 | ⬜ NuGet | Search / add / update packages (`dotnet add package`, `dotnet list package --outdated`) | 0.6h |
-| 2.3 | ⬜ Format | `dotnet format` / LSP formatting on save, `.editorconfig` respected | 0.3h |
+| 2.3 | ✅ Format | Format on save (organize usings + csharp-ls); `.editorconfig` resolved per file (globs, root, nearest wins) for editor Tab/indent and LSP options — csharp-ls applies its style rules; .NET ▸ Format Solution runs `dotnet format` | 0.3h |
 | 2.4 | ✅ Decompiled sources | Go to definition into compiled assemblies: csharp-ls `metadataUris` → `csharp/metadata` → cached read-only tab (hover / definition keep working inside it via its csharp:/ URI) | 0.4h |
 | 2.5 | ✅ Coverage | `dotnet test --collect "XPlat Code Coverage"` → coverlet cobertura reports merged per line → editor tint + per-file % in Tests. Folders with several projects and no .sln get a generated .slnx (in Caches) so Build/Test All work | 0.5h |
 | 2.6 | ⬜ Roslyn LSP option | Optional Microsoft.CodeAnalysis.LanguageServer backend for richer analyzers | 1h |

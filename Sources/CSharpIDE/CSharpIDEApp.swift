@@ -269,6 +269,7 @@ struct CSharpIDECommands: Commands {
                     .keyboardShortcut("b", modifiers: [.shift, .command])
                 Button("Clean") { workspace.clean() }
                 Button("Restore Packages") { workspace.restore() }
+                Button("Format Solution (dotnet format)") { workspace.formatSolution() }
                 Divider()
                 Button("Test All") { workspace.runTests(.all) }
                     .keyboardShortcut("u")
